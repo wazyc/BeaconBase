@@ -26,6 +26,7 @@ BeaconBase - インフラ統合監視システム
 
 import argparse
 import sys
+import os
 import logging
 from typing import Optional
 from beaconbase import MonitoringSystem, MonitoringError
@@ -106,7 +107,8 @@ class MonitoringCLI:
         self.logger.info("Starting BeaconBase monitoring system...")
 
         try:
-            with MonitoringSystem(self.args.config) as monitor:
+            config_file_path = self.args.config if self.args.config else os.path.join(os.path.dirname(os.path.abspath(self.args.config)), str(self.args.config))
+            with MonitoringSystem(config_file_path) as monitor:
                 # 設定ファイルの検証
                 validation_error = monitor.validate_config()
                 if validation_error:
