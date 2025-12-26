@@ -1,0 +1,200 @@
+# BeaconBase Monitoring System Configuration File (Sample)
+# BeaconBase 監視システム設定ファイル（サンプル）
+#
+# How to use / 使用方法:
+#   1. Copy this file as config.yaml / このファイルをconfig.yamlとしてコピー
+#   2. Edit each section according to your environment / 各セクションを環境に合わせて編集
+#   3. Run: python monitor.py -c config.yaml / python monitor.py -c config.yaml で実行
+
+# ============================================================
+# Storage Configuration / ストレージ設定
+# ============================================================
+storage:
+  # Monitoring results output directory (absolute path recommended) / 監視結果の保存先ディレクトリ（絶対パスを推奨）
+  # Windows: "C:/monitoring/output" or "C:\\monitoring\\output"
+  # Linux/Mac: "/home/user/monitoring/output"
+  output_folder: "./output"
+
+# ============================================================
+# Default SSH Configuration / デフォルトSSH設定
+# ============================================================
+# Used when individual SSH settings are not specified in server configurations
+# 各サーバー設定で個別のSSH情報が指定されていない場合、この設定が使用されます。
+default_ssh:
+  # SSH login username / SSHログインユーザー名
+  username: "monitoring_user"
+
+  # SSH private key path (set permissions to 600) / SSH秘密鍵のパス（パーミッションは600に設定してください）
+  # Windows: "C:/Users/username/.ssh/id_rsa"
+  # Linux/Mac: "~/.ssh/id_rsa" or "/home/user/.ssh/id_rsa"
+  key_path: "~/.ssh/id_rsa"
+
+  # SSH port number (default: 22) / SSHポート番号（デフォルト: 22）
+  port: 22
+
+# ============================================================
+# Log Collection Configuration / ログ収集設定
+# ============================================================
+log_collection:
+  # Whether to delete log files on server after collection / ログ収集後にサーバー上のログファイルを削除するかどうか
+  # true: Delete after collection (save disk space) / 収集後に削除（ディスク容量節約）
+  # false: Keep after collection (safer) / 収集後も保持（安全性重視）
+  delete_after_collection: false
+  
+  servers:
+    # --- Web Server Example / Webサーバーの例 ---
+    - name: "web-server-01"
+      host: "192.168.1.100"
+      # Individual SSH settings (optional, uses default_ssh if not specified) / 個別のSSH設定（オプション、指定しない場合はdefault_sshを使用）
+      ssh_username: "webadmin"
+      ssh_key_path: "~/.ssh/web_server_key"
+      ssh_port: 22
+      # List of log file paths to collect (absolute paths on server) / 収集するログファイルのパスリスト（サーバー上の絶対パス）
+      log_paths:
+        - "/var/log/nginx/access.log"
+        - "/var/log/nginx/error.log"
+        - "/var/log/application/app.log"
+
+    # --- Application Server Example / アプリケーションサーバーの例 ---
+    - name: "app-server-01"
+      host: "192.168.1.101"
+      # Can omit individual settings if using default_ssh / default_ssh設定を使用する場合は、個別設定を省略可能
+      log_paths:
+        - "/var/log/myapp/application.log"
+        - "/var/log/myapp/error.log"
+
+    # --- Server with Custom Port Example / カスタムポートを使用するサーバーの例 ---
+    - name: "db-server-01"
+      host: "192.168.1.102"
+      ssh_username: "dbadmin"
+      ssh_key_path: "~/.ssh/db_server_key"
+      ssh_port: 2222  # Custom SSH port / カスタムSSHポート
+      log_paths:
+        - "/var/log/postgresql/postgresql.log"
+        - "/var/log/postgresql/error.log"
+
+# ============================================================
+# Ping Monitoring Configuration / Ping監視設定
+# ============================================================
+# Network device and server availability monitoring / ネットワーク機器やサーバーの死活監視
+ping_targets:
+  # --- Network Device Examples / ネットワーク機器の例 ---
+  - name: "main-gateway"
+    host: "192.168.1.1"
+
+  - name: "core-switch"
+    host: "192.168.1.2"
+
+  # --- Server Examples / サーバーの例 ---
+  - name: "web-server"
+    host: "192.168.1.100"
+
+  - name: "app-server"
+    host: "192.168.1.101"
+
+  - name: "db-server"
+    host: "192.168.1.102"
+
+  # --- External Service Examples / 外部サービスの例 ---
+  - name: "dns-server"
+    host: "8.8.8.8"
+
+# ============================================================
+# Docker Container Monitoring Configuration / Dockerコンテナ監視設定
+# ============================================================
+docker_monitoring:
+  servers:
+    # --- Docker Host 1 Example / Dockerホスト1の例 ---
+    - host: "192.168.1.100"
+      # SSH settings (optional) / SSH設定（オプション）
+      ssh_username: "docker_user"
+      ssh_key_path: "~/.ssh/docker_key"
+      ssh_port: 22
+
+      containers:
+        # Web application containers (with health checks) / Webアプリケーションコンテナ（ヘルスチェック付き）
+        - name: "nginx-proxy"
+          type: "web"
+          # Health check URL accessible from within container / コンテナ内部からアクセス可能なヘルスチェックURL
+          health_check_url: "http://localhost:80/health"
+
+        - name: "web-api"
+          type: "web"
+          health_check_url: "http://localhost:8080/api/health"
+
+        # Application containers (no health check required) / アプリケーションコンテナ（ヘルスチェック不要）
+        - name: "background-worker"
+          type: "application"
+
+        # Database containers (no health check required) / データベースコンテナ（ヘルスチェック不要）
+        - name: "redis-cache"
+          type: "database"
+
+    # --- Docker Host 2 Example / Dockerホスト2の例 ---
+    - host: "192.168.1.101"
+      containers:
+        - name: "postgresql"
+          type: "database"
+
+        - name: "mongodb"
+          type: "database"
+
+# ============================================================
+# Web Page Health Check Configuration / Webページヘルスチェック設定
+# ============================================================
+web_health_checks:
+  targets:
+    # --- Public Website Examples / 公開Webサイトの例 ---
+    - name: "corporate-website"
+      url: "https://www.example.com"
+      # Request timeout (seconds) / リクエストタイムアウト（秒）
+      timeout: 30
+      # SSL certificate verification (recommended true for public sites) / SSL証明書の検証（公開サイトはtrueを推奨）
+      verify_ssl: true
+
+    # --- REST API Endpoint Examples / REST APIエンドポイントの例 ---
+    - name: "rest-api-health"
+      url: "https://api.example.com/v1/health"
+      timeout: 10
+      verify_ssl: true
+
+    # --- Internal Service Examples (self-signed certificate) / 内部サービスの例（自己署名証明書） ---
+    - name: "internal-dashboard"
+      url: "https://dashboard.internal.local"
+      timeout: 15
+      # Set to false if using self-signed certificates / 自己署名証明書を使用している場合はfalseに設定
+      verify_ssl: false
+
+    # --- HTTP (non-SSL) Endpoint Examples / HTTP（非SSL）エンドポイントの例 ---
+    - name: "monitoring-endpoint"
+      url: "http://monitor.internal.local:8080/status"
+      timeout: 5
+      verify_ssl: false
+
+# ============================================================
+# Configuration Tips / 設定のヒント
+# ============================================================
+#
+# 1. Path Specifications / パスの指定:
+#    - Absolute paths are recommended / 絶対パスの使用を推奨
+#    - Windows: Use "/" or "\\" / Windowsでは "/" または "\\" を使用可能
+#    - "~" represents home directory / "~" はホームディレクトリを表す
+#
+# 2. SSH Key Settings / SSH鍵の設定:
+#    - Set key permissions to 600 (Linux/Mac) / 鍵のパーミッションを600に設定（Linux/Mac）
+#    - Password authentication not supported (key authentication only) / パスワード認証は非対応（鍵認証のみ）
+#
+# 3. Docker Container Types / Dockerコンテナのtype:
+#    - web: Web services (health_check_url required) / Webサービス（health_check_url必須）
+#    - application: Applications / アプリケーション
+#    - database: Databases / データベース
+#
+# 4. Security / セキュリティ:
+#    - Do not include sensitive information in this file / このファイルには機密情報を含めないこと
+#    - Add to .gitignore if using Git / Git管理する場合は.gitignoreに追加
+#    - Consider using environment variables in production / 本番環境では環境変数の使用を検討
+#
+# 5. Test Execution / テスト実行:
+#    - Start with a small number of monitoring targets for testing / 最初は少数の監視対象で動作確認
+#    - Run with verbose logging: python monitor.py -c config.yaml -v / 詳細ログを有効にして実行: python monitor.py -c config.yaml -v
+#
