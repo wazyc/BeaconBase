@@ -34,7 +34,7 @@ import sys
 import os
 import logging
 from typing import Optional
-from beaconbase import MonitoringSystem, MonitoringError
+from beaconbase import MonitoringSystem, MonitoringError, CheckStatus
 
 
 class MonitoringCLI:
@@ -87,7 +87,7 @@ class MonitoringCLI:
         parser.add_argument(
             '--config', '-c',
             default="config.yaml",
-            help='監視設定を含むYAMLファイルのパス（デフォルト: config.yaml）'
+            help='監視設定のメインYAMLパス（ルートの includes_dir で分割ディレクトリを読み込み可。デフォルト: config.yaml）'
         )
         parser.add_argument(
             '--verbose', '-v',
@@ -126,7 +126,7 @@ class MonitoringCLI:
 
                 # 結果の確認
                 has_errors = any(
-                    result.status == 'ERROR'
+                    result.status == CheckStatus.ERROR
                     for category in results.values()
                     for result in category
                 )

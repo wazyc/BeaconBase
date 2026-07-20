@@ -1,0 +1,26 @@
+# 分割設定サンプル: Ping（社内ネットワーク機器・サーバー）
+# 同名リストは他断片・メイン本体と連結されます（置換ではありません）。
+# 外部向けの例は 11-ping_external.yaml を参照。
+ping_targets:
+  # --- ネットワーク機器 ---
+  - name: "main-gateway"
+    host: "192.168.1.1"
+
+  - name: "core-switch"
+    host: "192.168.1.2"
+
+  - name: "access-switch-floor1"
+    host: "192.168.1.10"
+
+  # --- サーバー ---
+  - name: "web-server"
+    host: "192.168.1.100"
+
+  - name: "app-server"
+    host: "192.168.1.101"
+
+  - name: "db-server"
+    host: "192.168.1.102"
+
+  - name: "backup-server"
+    host: "192.168.1.110"

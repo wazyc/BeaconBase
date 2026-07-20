@@ -21,12 +21,15 @@ Classes:
 Typical usage example:
     with MonitoringSystem("config.yaml") as monitor:
         monitor.run_all_checks()
+
+メイン設定YAMLのルートに includes_dir（文字列）を書くと、
+そのディレクトリ直下の YAML をマージして読み込みます。詳細は docs/configuration.md。
 """
 
-import yaml
 import subprocess
 import docker
 import requests
+import urllib3
 from datetime import datetime
 import os
 import logging
@@ -41,15 +44,24 @@ import ping3
 from dataclasses import dataclass
 from enum import Enum, auto
 
+from exceptions import MonitoringError, RetryableError
+from config_loader import (
+    CONFIG_INCLUDES_DIR_KEY,
+    load_merged_yaml_config,
+)
 
-class MonitoringError(Exception):
-    """監視システムの基本例外クラス"""
-    pass
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-
-class RetryableError(MonitoringError):
-    """リトライ可能なエラーを示す例外クラス"""
-    pass
+# 後方互換のための再エクスポート
+__all__ = [
+    "MonitoringError",
+    "RetryableError",
+    "CheckStatus",
+    "CheckResult",
+    "MonitoringSystem",
+    "load_merged_yaml_config",
+    "CONFIG_INCLUDES_DIR_KEY",
+]
 
 
 class CheckStatus(Enum):
@@ -106,10 +118,11 @@ class MonitoringSystem:
             MonitoringError: 設定ファイルの読み込みに失敗した場合
         """
         try:
-            with open(config_path, 'r', encoding="utf-8") as f:
-                self.config = yaml.safe_load(f)
+            self.config = load_merged_yaml_config(config_path)
+        except MonitoringError:
+            raise
         except Exception as e:
-            raise MonitoringError(f"Failed to load config file: {e}")
+            raise MonitoringError(f"Failed to load config file: {e}") from e
 
         self._setup_logging()
         self._initialize_parameters()
@@ -124,12 +137,26 @@ class MonitoringSystem:
 
     def _validate_and_create_directories(self):
         """出力ディレクトリの検証と作成"""
+        if 'storage' not in self.config:
+            raise MonitoringError(
+                "設定に 'storage' がありません。"
+                "config.d/00-storage.yaml 等で storage.output_folder を定義するか、"
+                "メインYAMLに storage セクションを書いてください。"
+            )
+        storage = self.config['storage']
+        if not isinstance(storage, dict) or 'output_folder' not in storage:
+            raise MonitoringError(
+                "設定 storage.output_folder がありません。"
+                "保存先ディレクトリのパスを指定してください。"
+            )
+        output_dir = storage['output_folder']
         try:
-            output_dir = self.config['storage']['output_folder']
             os.makedirs(output_dir, exist_ok=True)
             os.makedirs(os.path.join(output_dir, 'logs'), exist_ok=True)
-        except Exception as e:
-            raise MonitoringError(f"Failed to create output directories: {e}")
+        except OSError as e:
+            raise MonitoringError(
+                f"出力ディレクトリの作成に失敗しました: {output_dir}: {e}"
+            ) from e
 
     def _setup_logging(self):
         """ロギングの設定"""
@@ -258,7 +285,7 @@ class MonitoringSystem:
         return {
             'username': server.get('ssh_username', default_ssh.get('username')),
             'key_path': server.get('ssh_key_path', default_ssh.get('key_path')),
-            'port': server.get('ssh_port', default_ssh.get('key_path'))
+            'port': server.get('ssh_port', default_ssh.get('port', 22))
         }
 
     def _collect_server_logs(self, server: Dict[str, Any]) -> List[CheckResult]:
@@ -418,6 +445,37 @@ class MonitoringSystem:
             self.logger.error(f"Unexpected error during ping to {host}: {str(e)}")
             return None
 
+    @staticmethod
+    def _status_from_container_status(container_status: Dict[str, Any]) -> CheckStatus:
+        """docker ps / inspect の結果から CheckStatus を判定する。
+
+        Health 情報があればそれを優先し、なければ Status 文字列から判定する。
+        """
+        if container_status.get('status') == 'NOT_FOUND':
+            return CheckStatus.NOT_FOUND
+
+        state = container_status.get('state', {}) or {}
+        health = state.get('Health', {}) or {}
+        health_status = health.get('Status', '')
+
+        if health_status:
+            if health_status == 'unhealthy':
+                return CheckStatus.ERROR
+            if health_status == 'starting':
+                return CheckStatus.WARNING
+            if health_status == 'healthy':
+                return CheckStatus.OK
+            return CheckStatus.ERROR
+
+        status_str = container_status.get('status', '')
+        if '(unhealthy)' in status_str:
+            return CheckStatus.ERROR
+        if '(health: starting)' in status_str or '(starting)' in status_str:
+            return CheckStatus.WARNING
+        if status_str.startswith('Up'):
+            return CheckStatus.OK
+        return CheckStatus.ERROR
+
     def check_docker_containers(self) -> List[CheckResult]:
         """Dockerコンテナの状態を確認
         
@@ -429,6 +487,7 @@ class MonitoringSystem:
         """
         results = []
         for server in self.config['docker_monitoring']['servers']:
+            ssh = None
             try:
                 # SSHクライアントの設定
                 ssh = paramiko.SSHClient()
@@ -452,13 +511,8 @@ class MonitoringSystem:
                     container_status = self._check_container_via_ssh(ssh, container)
                     container_status['host'] = server['host']
                     
-                    if container_status.get('status') == 'NOT_FOUND':
-                        status = CheckStatus.NOT_FOUND
-                    elif container_status.get('status', '').startswith('Up'):
-                        status = CheckStatus.OK
-                    else:
-                        status = CheckStatus.ERROR
-                    
+                    status = self._status_from_container_status(container_status)
+
                     results.append(CheckResult(
                         name=container['name'],
                         status=status,
@@ -475,7 +529,8 @@ class MonitoringSystem:
                     details={'error': str(e), 'host': server['host']}
                 ))
             finally:
-                ssh.close()
+                if ssh is not None:
+                    ssh.close()
 
         return results
 
@@ -519,13 +574,8 @@ class MonitoringSystem:
         """Webアプリケーションの健全性確認（詳細情報付き）"""
         try:
             start_time = time.time()
-            # SSL証明書の検証をスキップ
             response = requests.get(url, timeout=5, verify=False)
             response_time = time.time() - start_time
-
-            # 警告メッセージを抑制
-            import urllib3
-            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
             return {
                 'status': 'OK' if response.status_code == 200 else 'FAIL',
@@ -626,40 +676,7 @@ class MonitoringSystem:
         with open(path, 'w') as f:
             json.dump(existing_data, f, indent=2)
 
-    def save_results(self, data: List[CheckResult], category: str) -> None:
-        """監視結果をファイルに保存
-        
-        詳細な結果をカテゴリごとのJSONファイルに保存し、
-        サマリーも作成します。
-        
-        Args:
-            data: 保存するCheckResultのリスト
-            category: データのカテゴリ（logs/ping/docker/web_health）
-        """
-        # 結果の保存
-        timestamp = datetime.now().strftime('%Y%m%d')
-        category_dir = os.path.join(self.config['storage']['output_folder'], category)
-        filename = f"{category}_{timestamp}.json"
-        path = os.path.join(category_dir, filename)
-
-        os.makedirs(category_dir, exist_ok=True)
-
-        # 新しいデータを保存用に変換
-        new_data = [
-            {
-                'name': result.name,
-                'status': result.status.name,
-                'timestamp': result.timestamp,
-                'details': result.details
-            }
-            for result in data
-        ]
-
-        # データを保存（上書き）
-        with open(path, 'w') as f:
-            json.dump(new_data, f, indent=2)
-
-        # サマリーの作成と保存
+        # monitoring_summary.json / log_summary.log（旧 save_results と同じタイミングで更新）
         if category in ['ping', 'docker', 'web_health']:
             self._update_summary(category, data)
         elif category == 'logs':
@@ -854,9 +871,7 @@ class MonitoringSystem:
         with open(summary_path, 'w') as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)
 
-        # ログのサマリーを作成（log_summary.log）
-        if 'logs' in results:
-            self._update_log_summary(results['logs'])
+        # log_summary.log は各カテゴリ保存時に _save_results 経由で _update_log_summary 済み
 
     def _write_error_summary(self, results: Dict[str, List[CheckResult]]) -> None:
         """エラーのみの監視結果をerror_summary.jsonに出力

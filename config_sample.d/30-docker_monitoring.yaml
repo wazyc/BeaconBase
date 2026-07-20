@@ -1,0 +1,40 @@
+# 分割設定サンプル: Docker コンテナ監視
+# type の目安:
+#   web         … Web サービス（health_check_url を推奨）
+#   application … アプリ／ワーカー
+#   database    … DB / キャッシュ
+docker_monitoring:
+  servers:
+    # --- Docker ホスト1（個別 SSH） ---
+    - host: "192.168.1.100"
+      ssh_username: "docker_user"
+      ssh_key_path: "~/.ssh/docker_key"
+      ssh_port: 22
+
+      containers:
+        - name: "nginx-proxy"
+          type: "web"
+          # コンテナ内部から到達可能な URL
+          health_check_url: "http://localhost:80/health"
+
+        - name: "web-api"
+          type: "web"
+          health_check_url: "http://localhost:8080/api/health"
+
+        - name: "background-worker"
+          type: "application"
+
+        - name: "redis-cache"
+          type: "database"
+
+    # --- Docker ホスト2（default_ssh） ---
+    - host: "192.168.1.101"
+      containers:
+        - name: "postgresql"
+          type: "database"
+
+        - name: "mongodb"
+          type: "database"
+
+        - name: "queue-worker"
+          type: "application"

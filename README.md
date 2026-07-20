@@ -2,23 +2,17 @@
 
 インフラ、サーバー、ネットワーク機器、Dockerコンテナ、WEBの簡易な監視
 
-Simple monitoring for infrastructure, servers, network devices, Docker containers, and web services
-
-## 概要 / Overview
+## 概要
 
 このシステムは以下の監視機能を提供します：
 
-This system provides the following monitoring features:
-
-- サーバーログの収集 / Server log collection
-- ネットワーク機器のPing監視 / Ping monitoring for network devices
-- Dockerコンテナの状態監視 / Docker container status monitoring
-- Web APIの健全性チェック / Web API health checks
-- Webページのヘルスチェック / Web page health checks
+- サーバーログの収集
+- ネットワーク機器のPing監視
+- Dockerコンテナの状態監視
+- Web APIの健全性チェック
+- Webページのヘルスチェック
 
 すべての監視結果は指定されたoutputフォルダにJSON形式で保存され、サマリーレポートが自動生成されます。
-
-All monitoring results are saved in JSON format to the specified output folder, and summary reports are automatically generated.
 
 ## 主な機能
 
@@ -38,6 +32,19 @@ All monitoring results are saved in JSON format to the specified output folder, 
 - Webコンテナのヘルスチェック
 - 詳細な状態情報の収集
 - 監視結果の自動集計
+
+#### ヘルスチェック状態の判定
+Docker Composeで設定されたヘルスチェックの結果は、以下のように判定されます：
+
+| ヘルスチェック状態 | BeaconBaseの判定 | 説明 |
+|-----------------|----------------|------|
+| `healthy` | OK | コンテナが正常に動作している |
+| `unhealthy` | ERROR | ヘルスチェックが失敗している |
+| `starting` | WARNING | ヘルスチェックの初期化中 |
+| ヘルスチェック未設定 | OK（コンテナ起動中の場合） | コンテナの基本状態のみで判定 |
+| NOT_FOUND | NOT_FOUND | コンテナが見つからない |
+
+判定は`docker inspect`で取得したHealth情報を優先的に使用し、Health情報がない場合は`docker ps`のステータス文字列から判定します。
 
 ### 4. Webページヘルスチェック
 - 指定されたURLのヘルスチェック
@@ -84,6 +91,23 @@ cp config_sample.yaml config.yaml
 
 ### 概要
 `config.yaml`は監視システムの動作を制御する中心的な設定ファイルです。以下のセクションで構成されています：
+
+### 設定を複数ファイルに分ける（`includes_dir`）
+
+設定が大きくなったときは、メインの YAML ルートに分割用ディレクトリを指定します。
+
+```yaml
+includes_dir: config.d
+
+log_collection:
+  # メイン側のセクション…
+```
+
+- パス: メイン設定ファイルがあるディレクトリからの相対パス（またはその配下に収まる絶対パス）。ディレクトリ外は拒否されます。
+- 対象: 指定ディレクトリ直下の `*.yaml` / `*.yml` をファイル名ソート順でマージし、続けてメイン本体をマージします。
+- マージ規則: 辞書は再帰マージ、リストは連結、それ以外は後から読んだ値が優先されます。
+- サンプル: [config_sample_split_entry.yaml](config_sample_split_entry.yaml) と [config_sample.d/](config_sample.d/)
+- 詳細仕様: [docs/configuration.md](docs/configuration.md)（アーキテクチャは [docs/architecture.md](docs/architecture.md)）
 
 ### 1. ストレージ設定 (storage)
 ```yaml

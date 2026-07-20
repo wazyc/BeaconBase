@@ -1,0 +1,8 @@
+# 分割設定サンプル: デフォルト SSH
+# 各サーバーで個別の SSH を書かない場合、ここが使われます。
+# パスワード認証は非対応（鍵認証のみ）。鍵のパーミッションは 600 を推奨。
+default_ssh:
+  username: "monitoring_user"
+  # Windows 例: "C:/Users/username/.ssh/id_rsa"
+  key_path: "~/.ssh/id_rsa"
+  port: 22

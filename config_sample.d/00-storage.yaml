@@ -1,0 +1,8 @@
+# 分割設定サンプル: ストレージ
+# ファイル名ソート順のため 00- で先頭に置く想定です。
+#
+# 監視結果の保存先。絶対パスを推奨。
+#   Windows: "C:/monitoring/output" または "C:\\monitoring\\output"
+#   Linux/Mac: "/home/user/monitoring/output"
+storage:
+  output_folder: "./output"

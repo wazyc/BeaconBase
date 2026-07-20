@@ -1,0 +1,11 @@
+# 分割設定サンプル: Ping（外部・DNS）
+# 10-ping_targets.yaml の ping_targets とマージ時に連結されます。
+ping_targets:
+  - name: "dns-google"
+    host: "8.8.8.8"
+
+  - name: "dns-cloudflare"
+    host: "1.1.1.1"
+
+  - name: "ntp-pool"
+    host: "pool.ntp.org"

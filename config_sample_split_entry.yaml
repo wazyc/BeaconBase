@@ -1,0 +1,33 @@
+# BeaconBase 監視設定（分割読込エントリのサンプル）
+#
+# 使い方:
+#   python monitor.py -c config_sample_split_entry.yaml
+#
+# 先頭の includes_dir で config_sample.d/ 直下の *.yaml / *.yml を
+# ファイル名ソート順にマージし、このファイル本体で上書き・追記します。
+# メインYAMLと同じディレクトリをルートとし、includes_dir もその配下に置いてください。
+#
+# config_sample.d/ の構成例:
+#   00-storage.yaml          … 保存先
+#   01-default_ssh.yaml      … SSH 既定値
+#   10-ping_targets.yaml     … Ping（社内）
+#   11-ping_external.yaml    … Ping（外部）※リスト連結の例
+#   20-log_collection.yaml   … ログ収集
+#   30-docker_monitoring.yaml… Docker
+#   40-web_health_checks.yaml… Web ヘルスチェック
+#
+# 詳細: docs/configuration.md
+
+includes_dir: config_sample.d
+
+# ============================================================
+# メイン本体でのマージ例（任意）
+# ============================================================
+# スカラーは後勝ち（断片の storage.output_folder を上書き）
+# storage:
+#   output_folder: "./output-from-entry"
+#
+# リストは連結（断片の ping_targets にさらに1件追加）
+# ping_targets:
+#   - name: "entry-only-host"
+#     host: "192.168.1.200"

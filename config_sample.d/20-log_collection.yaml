@@ -1,0 +1,35 @@
+# 分割設定サンプル: ログ収集
+# log_paths はサーバー上の絶対パスを指定します。
+# SSH を省略したサーバーは default_ssh（01-default_ssh.yaml）を使います。
+log_collection:
+  # true: 収集後にサーバー上のログを削除 / false: 保持（安全性重視）
+  delete_after_collection: false
+
+  servers:
+    # --- Web サーバー（個別 SSH） ---
+    - name: "web-server-01"
+      host: "192.168.1.100"
+      ssh_username: "webadmin"
+      ssh_key_path: "~/.ssh/web_server_key"
+      ssh_port: 22
+      log_paths:
+        - "/var/log/nginx/access.log"
+        - "/var/log/nginx/error.log"
+        - "/var/log/application/app.log"
+
+    # --- アプリサーバー（default_ssh を利用） ---
+    - name: "app-server-01"
+      host: "192.168.1.101"
+      log_paths:
+        - "/var/log/myapp/application.log"
+        - "/var/log/myapp/error.log"
+
+    # --- DB サーバー（カスタム SSH ポート） ---
+    - name: "db-server-01"
+      host: "192.168.1.102"
+      ssh_username: "dbadmin"
+      ssh_key_path: "~/.ssh/db_server_key"
+      ssh_port: 2222
+      log_paths:
+        - "/var/log/postgresql/postgresql.log"
+        - "/var/log/postgresql/error.log"
