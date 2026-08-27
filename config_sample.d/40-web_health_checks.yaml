@@ -13,6 +13,7 @@ web_health_checks:
       url: "https://api.example.com/v1/health"
       timeout: 10
       verify_ssl: true
+      expected_status: [200, 204]
 
     - name: "rest-api-ready"
       url: "https://api.example.com/v1/ready"

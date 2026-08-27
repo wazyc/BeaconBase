@@ -11,4 +11,4 @@
 - `exceptions.py` に `MonitoringError` / `RetryableError`、`config_loader.py` に `load_merged_yaml_config`。`beaconbase` はこれらを再エクスポートする
 - 断片 YAML に `includes_dir` を書いてはならない。`includes_dir` の解決パスはメイン設定ファイルのディレクトリ配下に限定する（サブディレクトリは読まない）
 - 詳細ドキュメントは `docs/configuration.md` と `docs/architecture.md`（索引は `docs/README.md`）
-- Windows では `py -m pytest` で実行する。`test_monitoring_system.py` が includes_dir マージと監視/CLI をカバー（現状 24 tests）
+- Windows では `py -m pytest` で実行する。`test_monitoring_system.py` が includes_dir マージと監視/CLI をカバーする

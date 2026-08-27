@@ -14,6 +14,18 @@
 #   - 詳細: docs/configuration.md
 
 # ============================================================
+# 実行パラメータ（省略可。未指定時はデフォルト）
+# ============================================================
+settings:
+  retry_count: 3
+  retry_delay: 5
+  timeout: 30
+  max_workers: 5
+  ping_timeout: 5
+  ssh_timeout: 15
+  log_summary_max_lines: 80
+
+# ============================================================
 # ストレージ設定
 # ============================================================
 storage:
@@ -121,12 +133,14 @@ docker_monitoring:
         # Webアプリケーションコンテナ（ヘルスチェック付き）
         - name: "nginx-proxy"
           type: "web"
-          # コンテナ内部からアクセス可能なヘルスチェックURL
+          # Docker ホスト上から到達可能なヘルスチェックURL（SSH 経由で curl する）
           health_check_url: "http://localhost:80/health"
 
         - name: "web-api"
           type: "web"
           health_check_url: "http://localhost:8080/api/health"
+          # Docker ホスト上で curl する際のタイムアウト（秒、省略時 5）
+          health_check_timeout: 5
 
         # アプリケーションコンテナ（ヘルスチェック不要）
         - name: "background-worker"
@@ -163,6 +177,8 @@ web_health_checks:
       url: "https://api.example.com/v1/health"
       timeout: 10
       verify_ssl: true
+      # 200 以外を正常とみなす場合（単一の整数でも可）
+      expected_status: [200, 204]
 
     # --- 内部サービスの例（自己署名証明書） ---
     - name: "internal-dashboard"
@@ -191,16 +207,21 @@ web_health_checks:
 #    - パスワード認証は非対応（鍵認証のみ）
 #
 # 3. Dockerコンテナのtype:
-#    - web: Webサービス（health_check_url必須）
+#    - web: Webサービス（health_check_url は任意。指定すると Docker ホスト上で curl する）
 #    - application: アプリケーション
 #    - database: データベース
 #
-# 4. セキュリティ:
+# 4. 監視セクションはすべて任意:
+#    - 使わない機能のセクションは省略してよい（storage のみ必須）
+#    - 部分実行: python monitor.py -c config.yaml --only ping,web_health
+#
+# 5. セキュリティ:
 #    - このファイルには機密情報を含めないこと
 #    - Git管理する場合は.gitignoreに追加
 #    - 本番環境では環境変数の使用を検討
 #
-# 5. テスト実行:
+# 6. テスト実行:
 #    - 最初は少数の監視対象で動作確認
 #    - 詳細ログを有効にして実行: python monitor.py -c config.yaml -v
+#    - 設定だけ確認: python monitor.py -c config.yaml --validate
 #

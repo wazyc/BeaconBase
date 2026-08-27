@@ -10,6 +10,7 @@
 # config_sample.d/ の構成例:
 #   00-storage.yaml          … 保存先
 #   01-default_ssh.yaml      … SSH 既定値
+#   05-settings.yaml         … リトライ・並列数など（省略可）
 #   10-ping_targets.yaml     … Ping（社内）
 #   11-ping_external.yaml    … Ping（外部）※リスト連結の例
 #   20-log_collection.yaml   … ログ収集
