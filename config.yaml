@@ -1,0 +1,15 @@
+# BeaconBase 監視設定（エントリ）
+#
+# config.d/ 直下の *.yaml をファイル名順にマージします。
+# 実行: python monitor.py -c config.yaml
+#
+# 分割ファイル一覧:
+#   00-storage.yaml          … 保存先
+#   01-default_ssh.yaml      … デフォルト SSH
+#   10-ping_targets.yaml     … Ping 監視
+#   20-log_collection.yaml   … ログ収集
+#   30-docker_sngfa-a.yaml   … Docker（sngfa-a）
+#   31-docker_sngfa-d.yaml   … Docker（sngfa-d）
+#   40-web_health_checks.yaml … Web ヘルスチェック
+
+includes_dir: config.d
