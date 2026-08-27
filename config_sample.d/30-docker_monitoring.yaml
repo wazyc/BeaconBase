@@ -14,12 +14,13 @@ docker_monitoring:
       containers:
         - name: "nginx-proxy"
           type: "web"
-          # コンテナ内部から到達可能な URL
+          # Docker ホスト上から到達可能な URL（SSH 経由で curl する）
           health_check_url: "http://localhost:80/health"
 
         - name: "web-api"
           type: "web"
           health_check_url: "http://localhost:8080/api/health"
+          health_check_timeout: 5
 
         - name: "background-worker"
           type: "application"

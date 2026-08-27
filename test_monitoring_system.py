@@ -9,20 +9,18 @@ import pytest
 import tempfile
 import os
 import json
-from unittest.mock import Mock, patch, mock_open
+from unittest.mock import Mock, patch
 from datetime import datetime
 from beaconbase import (
     MonitoringSystem,
     MonitoringError,
-    RetryableError,
     CheckStatus,
     CheckResult,
     load_merged_yaml_config,
     CONFIG_INCLUDES_DIR_KEY,
+    CHECK_CATEGORIES,
+    is_monitoring_failure,
 )
-import docker
-import paramiko
-import ping3
 import requests
 import yaml
 from typing import Dict, Any
@@ -63,8 +61,7 @@ def config_data(temp_dir) -> Dict[str, Any]:
                 'ssh_key_path': "/tmp/test_key2",
                 'containers': [{
                     'name': "test_container",
-                    'type': "web",
-                    'health_check_url': "http://localhost:8080"
+                    'type': "web"
                 }]
             }]
         },
@@ -126,7 +123,7 @@ class TestMonitoringSystem:
     def test_ping_check_failure(self, monitoring_system: MonitoringSystem):
         """Ping失敗時のテスト"""
         with patch('ping3.ping') as mock_ping:
-            mock_ping.return_value = None  # 到達不可能
+            mock_ping.return_value = False  # タイムアウト（到達不能）
 
             results = monitoring_system.check_ping()
             assert len(results) == 1
@@ -164,7 +161,7 @@ class TestMonitoringSystem:
             results = monitoring_system.check_docker_containers()
             assert len(results) == 1
             assert results[0].status == CheckStatus.OK
-            assert results[0].name == "test_container"
+            assert results[0].name == "test_container@127.0.0.1"
             assert isinstance(results[0].timestamp, str)
             assert results[0].details['status'] == 'Up 2 days'
             assert results[0].details['host'] == '127.0.0.1'
@@ -205,7 +202,7 @@ class TestMonitoringSystem:
             results = monitoring_system.check_docker_containers()
             assert len(results) == 1
             assert results[0].status == CheckStatus.ERROR
-            assert results[0].name == "test_container"
+            assert results[0].name == "test_container@127.0.0.1"
             assert results[0].details['status'] == 'Up 2 days (unhealthy)'
             assert results[0].details['state']['Health']['Status'] == 'unhealthy'
 
@@ -243,7 +240,7 @@ class TestMonitoringSystem:
             results = monitoring_system.check_docker_containers()
             assert len(results) == 1
             assert results[0].status == CheckStatus.WARNING
-            assert results[0].name == "test_container"
+            assert results[0].name == "test_container@127.0.0.1"
             assert results[0].details['status'] == 'Up 30 seconds (health: starting)'
             assert results[0].details['state']['Health']['Status'] == 'starting'
 
@@ -281,7 +278,7 @@ class TestMonitoringSystem:
             results = monitoring_system.check_docker_containers()
             assert len(results) == 1
             assert results[0].status == CheckStatus.OK
-            assert results[0].name == "test_container"
+            assert results[0].name == "test_container@127.0.0.1"
             assert results[0].details['status'] == 'Up 2 days (healthy)'
             assert results[0].details['state']['Health']['Status'] == 'healthy'
 
@@ -360,7 +357,7 @@ class TestMonitoringSystem:
             monitoring_system.config['web_health_checks'] = {}
             error = monitoring_system.validate_config()
             assert error is not None
-            assert "Missing 'targets' in web_health_checks" in error
+            assert "web_health_checks.targets" in error
 
             # 必須フィールドが missing
             monitoring_system.config['web_health_checks'] = {
@@ -368,7 +365,7 @@ class TestMonitoringSystem:
             }
             error = monitoring_system.validate_config()
             assert error is not None
-            assert "Missing required fields" in error
+            assert "必須項目がありません" in error
 
     def test_collect_logs_with_deletion(self):
         """ログ収集とファイル削除のテスト"""
@@ -634,7 +631,7 @@ class TestMonitoringCLI:
             yaml.dump(config_data, f)
         
         with patch('sys.argv', ['monitor.py', '-c', config_path]):
-            with patch('ping3.ping', return_value=None):
+            with patch('ping3.ping', return_value=False):
                 cli = MonitoringCLI()
                 exit_code = cli.run()
         
@@ -647,14 +644,336 @@ class TestMonitoringCLI:
         config_path = os.path.join(temp_dir, 'config.yaml')
         config_data = {
             'storage': {'output_folder': temp_dir},
-            'log_collection': {'servers': []},
-            'ping_targets': []
+            'ping_targets': [{'name': 'broken'}],  # host が無い
         }
         with open(config_path, 'w') as f:
             yaml.dump(config_data, f)
-        
+
         with patch('sys.argv', ['monitor.py', '-c', config_path]):
             cli = MonitoringCLI()
             exit_code = cli.run()
-        
+
         assert exit_code == 1
+
+    def test_cli_validate_only(self, temp_dir):
+        """--validate は監視せず終了コード 0 を返す"""
+        from monitor import MonitoringCLI
+
+        config_path = os.path.join(temp_dir, 'config.yaml')
+        config_data = {
+            'storage': {'output_folder': temp_dir},
+            'ping_targets': [{'name': 'router', 'host': '192.0.2.1'}],
+        }
+        with open(config_path, 'w') as f:
+            yaml.dump(config_data, f)
+
+        with patch('sys.argv', ['monitor.py', '-c', config_path, '--validate']):
+            with patch('ping3.ping') as mock_ping:
+                cli = MonitoringCLI()
+                exit_code = cli.run()
+
+        assert exit_code == 0
+        mock_ping.assert_not_called()
+
+    def test_cli_only_unknown_category(self, temp_dir):
+        """不明な --only カテゴリは終了コード 1"""
+        from monitor import MonitoringCLI
+
+        config_path = os.path.join(temp_dir, 'config.yaml')
+        with open(config_path, 'w') as f:
+            yaml.dump({'storage': {'output_folder': temp_dir}}, f)
+
+        with patch('sys.argv', ['monitor.py', '-c', config_path, '--only', 'smtp']):
+            cli = MonitoringCLI()
+            exit_code = cli.run()
+
+        assert exit_code == 1
+
+    def test_cli_only_web_health(self, temp_dir):
+        """--only web_health は他カテゴリを実行しない"""
+        from monitor import MonitoringCLI
+
+        config_path = os.path.join(temp_dir, 'config.yaml')
+        config_data = {
+            'storage': {'output_folder': temp_dir},
+            'ping_targets': [{'name': 'router', 'host': '192.0.2.1'}],
+            'web_health_checks': {
+                'targets': [{'name': 'site', 'url': 'https://example.com'}]
+            },
+        }
+        with open(config_path, 'w') as f:
+            yaml.dump(config_data, f)
+
+        with patch('sys.argv', ['monitor.py', '-c', config_path, '--only', 'web_health']):
+            with patch('ping3.ping') as mock_ping:
+                with patch('requests.get') as mock_get:
+                    mock_response = Mock()
+                    mock_response.status_code = 200
+                    mock_response.elapsed.total_seconds.return_value = 0.1
+                    mock_get.return_value = mock_response
+                    cli = MonitoringCLI()
+                    exit_code = cli.run()
+
+        assert exit_code == 0
+        mock_ping.assert_not_called()
+        mock_get.assert_called_once()
+
+
+class TestUsabilityAndOptionalSections:
+    """任意カテゴリ・結果サマリーなど使いやすさのテスト"""
+
+    def test_optional_sections_validate_ok(self, temp_dir):
+        """storage のみでも設定検証が通る"""
+        config_path = os.path.join(temp_dir, 'config.yaml')
+        with open(config_path, 'w') as f:
+            yaml.dump({'storage': {'output_folder': temp_dir}}, f)
+        system = MonitoringSystem(config_path)
+        assert system.validate_config() is None
+        assert system.enabled_categories() == []
+
+    def test_run_all_checks_skips_empty_categories(self, temp_dir):
+        """未設定カテゴリは実行せず空の結果になる"""
+        config_path = os.path.join(temp_dir, 'config.yaml')
+        with open(config_path, 'w') as f:
+            yaml.dump({
+                'storage': {'output_folder': temp_dir},
+                'web_health_checks': {
+                    'targets': [{'name': 'site', 'url': 'https://example.com'}]
+                },
+            }, f)
+        system = MonitoringSystem(config_path)
+        with patch('requests.get') as mock_get:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.elapsed.total_seconds.return_value = 0.2
+            mock_get.return_value = mock_response
+            results = system.run_all_checks()
+        assert set(results.keys()) == {'web_health'}
+        assert results['web_health'][0].status == CheckStatus.OK
+
+    def test_web_expected_status_list(self, temp_dir):
+        """expected_status に複数コードを指定できる"""
+        config_path = os.path.join(temp_dir, 'config.yaml')
+        with open(config_path, 'w') as f:
+            yaml.dump({
+                'storage': {'output_folder': temp_dir},
+                'web_health_checks': {
+                    'targets': [{
+                        'name': 'no-content',
+                        'url': 'https://example.com/health',
+                        'expected_status': [200, 204],
+                    }]
+                },
+            }, f)
+        system = MonitoringSystem(config_path)
+        with patch('requests.get') as mock_get:
+            mock_response = Mock()
+            mock_response.status_code = 204
+            mock_response.elapsed.total_seconds.return_value = 0.1
+            mock_get.return_value = mock_response
+            results = system.check_web_health()
+        assert results[0].status == CheckStatus.OK
+        assert results[0].details['expected_status'] == [200, 204]
+
+    def test_web_unexpected_status_is_error(self, temp_dir):
+        """期待しないステータスコードは ERROR"""
+        config_path = os.path.join(temp_dir, 'config.yaml')
+        with open(config_path, 'w') as f:
+            yaml.dump({
+                'storage': {'output_folder': temp_dir},
+                'web_health_checks': {
+                    'targets': [{'name': 'site', 'url': 'https://example.com'}]
+                },
+            }, f)
+        system = MonitoringSystem(config_path)
+        with patch('requests.get') as mock_get:
+            mock_response = Mock()
+            mock_response.status_code = 503
+            mock_response.elapsed.total_seconds.return_value = 0.1
+            mock_get.return_value = mock_response
+            results = system.check_web_health()
+        assert results[0].status == CheckStatus.ERROR
+        assert '503' in results[0].details['error']
+
+    def test_error_summary_removed_when_healthy(self, temp_dir):
+        """今回エラーが無ければ前回の error_summary.json を削除する"""
+        config_path = os.path.join(temp_dir, 'config.yaml')
+        with open(config_path, 'w') as f:
+            yaml.dump({
+                'storage': {'output_folder': temp_dir},
+                'web_health_checks': {
+                    'targets': [{'name': 'site', 'url': 'https://example.com'}]
+                },
+            }, f)
+        leftover = os.path.join(temp_dir, 'error_summary.json')
+        with open(leftover, 'w') as f:
+            json.dump({'results': {'ping': []}}, f)
+
+        system = MonitoringSystem(config_path)
+        with patch('requests.get') as mock_get:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.elapsed.total_seconds.return_value = 0.1
+            mock_get.return_value = mock_response
+            system.run_all_checks()
+
+        assert not os.path.exists(leftover)
+        check_summary = os.path.join(temp_dir, 'check_summary.json')
+        with open(check_summary, encoding='utf-8') as f:
+            payload = json.load(f)
+        assert 'counts' in payload
+        assert payload['counts']['web_health']['OK'] == 1
+
+    def test_settings_override_defaults(self, temp_dir):
+        """settings セクションでパラメータを上書きできる"""
+        config_path = os.path.join(temp_dir, 'config.yaml')
+        with open(config_path, 'w') as f:
+            yaml.dump({
+                'storage': {'output_folder': temp_dir},
+                'settings': {
+                    'retry_count': 1,
+                    'max_workers': 2,
+                    'ping_timeout': 1,
+                    'log_summary_max_lines': 10,
+                },
+            }, f)
+        system = MonitoringSystem(config_path)
+        assert system.retry_count == 1
+        assert system.max_workers == 2
+        assert system.ping_timeout == 1
+        assert system.log_summary_max_lines == 10
+
+    def test_expanduser_on_output_folder(self, temp_dir, monkeypatch):
+        """output_folder の ~ をホームディレクトリに展開する"""
+        monkeypatch.setenv('HOME', temp_dir)
+        out = os.path.join(temp_dir, 'mon-out')
+        config_path = os.path.join(temp_dir, 'config.yaml')
+        with open(config_path, 'w') as f:
+            yaml.dump({'storage': {'output_folder': '~/mon-out'}}, f)
+        system = MonitoringSystem(config_path)
+        assert system.config['storage']['output_folder'] == os.path.abspath(out)
+        assert os.path.isdir(out)
+
+    def test_docker_http_health_via_ssh(self, monitoring_system: MonitoringSystem):
+        """Docker の HTTP ヘルスチェックは SSH 上の curl で行う"""
+        monitoring_system.config['docker_monitoring']['servers'][0]['containers'][0][
+            'health_check_url'
+        ] = 'http://localhost:8080/health'
+        with patch('paramiko.SSHClient') as mock_ssh:
+            mock_ssh_instance = Mock()
+            mock_ssh.return_value = mock_ssh_instance
+
+            mock_stdout_ps = Mock()
+            mock_stdout_ps.read.return_value = b'Up 2 days (healthy)'
+            mock_stdout_inspect = Mock()
+            inspect_data = {
+                'Created': '2023-01-01T00:00:00Z',
+                'State': {'Status': 'running', 'Health': {'Status': 'healthy'}},
+            }
+            mock_stdout_inspect.read.return_value = json.dumps([inspect_data]).encode()
+            mock_stdout_curl = Mock()
+            mock_stdout_curl.read.return_value = b'200 0.012'
+            mock_stderr_curl = Mock()
+            mock_stderr_curl.read.return_value = b''
+
+            mock_ssh_instance.exec_command.side_effect = [
+                (None, mock_stdout_ps, None),
+                (None, mock_stdout_inspect, None),
+                (None, mock_stdout_curl, mock_stderr_curl),
+            ]
+
+            results = monitoring_system.check_docker_containers()
+
+        assert results[0].status == CheckStatus.OK
+        assert results[0].details['health_check']['status'] == 'OK'
+        assert results[0].details['health_check']['response_code'] == 200
+        curl_cmd = mock_ssh_instance.exec_command.call_args_list[2][0][0]
+        assert 'curl' in curl_cmd
+        assert 'localhost:8080/health' in curl_cmd
+
+    def test_docker_http_health_fail_overrides_status(
+        self, monitoring_system: MonitoringSystem
+    ):
+        """curl ヘルスチェック失敗はコンテナが healthy でも ERROR"""
+        monitoring_system.config['docker_monitoring']['servers'][0]['containers'][0][
+            'health_check_url'
+        ] = 'http://localhost:8080/health'
+        with patch('paramiko.SSHClient') as mock_ssh:
+            mock_ssh_instance = Mock()
+            mock_ssh.return_value = mock_ssh_instance
+            mock_stdout_ps = Mock()
+            mock_stdout_ps.read.return_value = b'Up 2 days (healthy)'
+            mock_stdout_inspect = Mock()
+            inspect_data = {
+                'Created': '2023-01-01T00:00:00Z',
+                'State': {'Status': 'running', 'Health': {'Status': 'healthy'}},
+            }
+            mock_stdout_inspect.read.return_value = json.dumps([inspect_data]).encode()
+            mock_stdout_curl = Mock()
+            mock_stdout_curl.read.return_value = b'503 0.010'
+            mock_stderr_curl = Mock()
+            mock_stderr_curl.read.return_value = b''
+            mock_ssh_instance.exec_command.side_effect = [
+                (None, mock_stdout_ps, None),
+                (None, mock_stdout_inspect, None),
+                (None, mock_stdout_curl, mock_stderr_curl),
+            ]
+            results = monitoring_system.check_docker_containers()
+        assert results[0].status == CheckStatus.ERROR
+        assert results[0].details['health_check']['status'] == 'FAIL'
+
+    def test_format_results_summary_lists_failures(self, temp_dir):
+        """コンソールサマリーに失敗項目が含まれる"""
+        config_path = os.path.join(temp_dir, 'config.yaml')
+        with open(config_path, 'w') as f:
+            yaml.dump({'storage': {'output_folder': temp_dir}}, f)
+        system = MonitoringSystem(config_path)
+        results = {
+            'ping': [
+                CheckResult(
+                    name='gw',
+                    status=CheckStatus.ERROR,
+                    timestamp='t',
+                    details={'host': '1.1.1.1', 'error': 'Host unreachable'},
+                )
+            ]
+        }
+        text = system.format_results_summary(results)
+        assert 'BeaconBase 監視結果' in text
+        assert 'ERROR:1' in text
+        assert 'gw' in text
+        assert 'Host unreachable' in text
+
+    def test_is_monitoring_failure_log_not_found_is_ok(self):
+        """ログの NOT_FOUND は終了コード上の失敗にしない"""
+        missing_log = CheckResult(
+            name='app.log',
+            status=CheckStatus.NOT_FOUND,
+            timestamp='t',
+            details={},
+        )
+        missing_container = CheckResult(
+            name='web@host',
+            status=CheckStatus.NOT_FOUND,
+            timestamp='t',
+            details={},
+        )
+        assert is_monitoring_failure('logs', missing_log) is False
+        assert is_monitoring_failure('docker', missing_container) is True
+
+    def test_ping_system_fallback_on_permission(self, monitoring_system: MonitoringSystem):
+        """ping3 が None を返したら OS ping にフォールバックする"""
+        with patch('ping3.ping', return_value=None):
+            with patch.object(
+                monitoring_system, '_ping_via_system', return_value=0.042
+            ) as mock_sys:
+                results = monitoring_system.check_ping()
+        mock_sys.assert_called_once_with('192.168.1.1')
+        assert results[0].status == CheckStatus.OK
+        assert results[0].details['response_time'] == 0.042
+        assert results[0].details['host'] == '192.168.1.1'
+
+    def test_check_categories_constant(self):
+        """CLI が使うカテゴリ定数が揃っている"""
+        assert CHECK_CATEGORIES == ('logs', 'ping', 'docker', 'web_health')
+
