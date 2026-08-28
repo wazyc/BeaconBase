@@ -975,5 +975,5 @@ class TestUsabilityAndOptionalSections:
 
     def test_check_categories_constant(self):
         """CLI が使うカテゴリ定数が揃っている"""
-        assert CHECK_CATEGORIES == ('logs', 'ping', 'docker', 'web_health')
+        assert CHECK_CATEGORIES == ('logs', 'ping', 'ports', 'disk', 'docker', 'web_health')
 

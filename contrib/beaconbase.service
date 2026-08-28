@@ -1,0 +1,15 @@
+[Unit]
+Description=BeaconBase LAN monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# WorkingDirectory と ExecStart を環境に合わせて書き換える
+WorkingDirectory=/opt/beaconbase
+ExecStart=/opt/beaconbase/venv/bin/python monitor.py -c /opt/beaconbase/config.yaml --interval --serve 8088
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

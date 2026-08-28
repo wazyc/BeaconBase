@@ -11,12 +11,15 @@ BeaconBase は YAML で監視対象と保存先を定義する。エントリと
 主なセクション:
 
 - `storage` — 結果の出力先（必須）
-- `settings` — リトライ回数・並列数・タイムアウトなど（省略可）
+- `settings` — リトライ回数・並列数・保持日数・定期実行の既定秒など（省略可）
 - `default_ssh` — サーバー個別設定が無いときの SSH 既定値
-- `log_collection` — ログ収集
 - `ping_targets` — Ping 監視
+- `port_checks` — TCP ポート監視
+- `disk_checks` — ディスク使用率（SSH）
+- `log_collection` — ログ収集
 - `docker_monitoring` — Docker コンテナ監視
 - `web_health_checks` — Web / API ヘルスチェック
+- `alerts` — 障害・回復の通知
 
 パスの `~` はホームディレクトリに展開する。
 
@@ -61,14 +64,17 @@ log_collection:
 - 断片ディレクトリ: [config_sample.d/](../config_sample.d/)
   - `00-storage.yaml` / `01-default_ssh.yaml` / `05-settings.yaml`
   - `10-ping_targets.yaml` / `11-ping_external.yaml`（同名リストの連結例）
+  - `12-port_checks.yaml` / `15-disk_checks.yaml`
   - `20-log_collection.yaml` / `30-docker_monitoring.yaml` / `40-web_health_checks.yaml`
+  - `50-alerts.yaml`
 
 実行例:
 
 ```bash
 python monitor.py -c config_sample_split_entry.yaml
 python monitor.py -c config.yaml --validate
-python monitor.py -c config.yaml --only ping,web_health
+python monitor.py -c config.yaml --only ping,ports
+python monitor.py -c config.yaml --interval 60 --serve 8088
 ```
 
 ## セクション詳細
@@ -84,6 +90,43 @@ python monitor.py -c config.yaml --only ping,web_health
 | `ping_timeout` | 5 | Ping の待ち時間（秒） |
 | `ssh_timeout` | 15 | SSH 接続タイムアウト（秒） |
 | `log_summary_max_lines` | 80 | `log_summary.log` に載せる本文の最大行数。0 で制限なし |
+| `retain_days` | 14 | 日次 JSON の保持日数。0 で無制限 |
+| `interval_seconds` | 60 | `--interval` の秒数省略時に使う |
+| `interval_include_logs` | false | 定期実行でもログ収集するか |
+| `dashboard_refresh_seconds` | 30 | `index.html` の自動更新秒 |
+| `log_file` | （なし） | 指定すると監視ログをファイルにも残す |
+
+### port_checks.targets
+
+| キー | 必須 | 内容 |
+|------|------|------|
+| `name` | はい | 識別名 |
+| `host` | はい | ホスト |
+| `port` | はい | TCP ポート番号 |
+| `timeout` | いいえ | 接続タイムアウト秒（既定 3） |
+| `group` | いいえ | ダッシュボード用のグループ名 |
+
+### disk_checks.servers
+
+| キー | 必須 | 内容 |
+|------|------|------|
+| `name` | はい | 識別名 |
+| `host` | はい | SSH 先 |
+| `warn_percent` | いいえ | この使用率以上で WARNING（既定 85） |
+| `error_percent` | いいえ | この使用率以上で ERROR（既定 95） |
+
+SSH は `default_ssh` またはサーバー個別の鍵設定を使う。
+
+### alerts
+
+| キー | 既定 | 内容 |
+|------|------|------|
+| `enabled` | true | false なら外部通知だけ止める（`alerts.log` は残る） |
+| `fail_count` | 2 | 連続失敗してから障害通知する回数 |
+| `remind_seconds` | 3600 | 継続中の再通知間隔。0 なら状態変化時のみ |
+| `webhook.url` | （空） | Slack / Discord / 汎用 POST |
+| `command` | （空） | 通知文を標準入力に渡して実行する |
+| `email` | （空） | SMTP。パスワードは `BEACONBASE_SMTP_PASSWORD` を推奨 |
 
 ### web_health_checks.targets
 

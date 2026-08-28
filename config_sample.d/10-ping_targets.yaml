@@ -5,6 +5,7 @@ ping_targets:
   # --- ネットワーク機器 ---
   - name: "main-gateway"
     host: "192.168.1.1"
+    group: "network"
 
   - name: "core-switch"
     host: "192.168.1.2"

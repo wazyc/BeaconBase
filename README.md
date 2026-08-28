@@ -1,21 +1,22 @@
 # BeaconBase
 
-インフラ、サーバー、ネットワーク機器、Dockerコンテナ、WEBの簡易な監視
+ローカルネットワーク向けの簡易監視。Ping・TCPポート・ディスク・Docker・Web を設定した対象だけ実行し、ブラウザで状態を見る。
 
 ## 概要
 
-次の監視を、設定した対象だけ実行する。使わない機能のセクションは省略してよい。
-
 - サーバーログの収集
-- ネットワーク機器の Ping 監視
-- Docker コンテナの状態監視
+- Ping と TCP ポートの死活
+- SSH 経由のディスク使用率
+- Docker コンテナの状態
 - Web / API のヘルスチェック
+- 状態変化の通知（ファイル / Webhook / メール / コマンド）
+- 結果フォルダの HTML ダッシュボード
 
-結果は output フォルダに JSON で保存し、実行直後にターミナルへサマリーを出す。
+使わない機能のセクションは省略してよい。必須は `storage.output_folder` のみ。
 
 ## セットアップ
 
-必要条件: Python 3.8 以上。SSH でログ収集・Docker 監視をする場合は鍵認証できること。Ping は管理者権限がなくても OS の `ping` にフォールバックする。
+必要条件: Python 3.8 以上。SSH を使う監視は鍵認証。Ping は管理者権限がなくても OS の `ping` にフォールバックする。
 
 ```bash
 git clone [repository-url]
@@ -27,10 +28,6 @@ pip install -r requirements.txt
 cp config_sample.yaml config.yaml
 ```
 
-`config.yaml` を環境に合わせて編集する。分割したい場合は [config_sample_split_entry.yaml](config_sample_split_entry.yaml) と [config_sample.d/](config_sample.d/) をコピーする。
-
-設定だけ確認する:
-
 ```bash
 python monitor.py -c config.yaml --validate
 ```
@@ -38,20 +35,24 @@ python monitor.py -c config.yaml --validate
 ## 使い方
 
 ```bash
-# 設定にある監視をすべて実行
+# 1回だけ実行
 python monitor.py -c config.yaml
 
-# Ping と Web だけ
-python monitor.py -c config.yaml --only ping,web_health
+# 死活だけ（Ping とポート）
+python monitor.py -c config.yaml --only ping,ports
 
-# 詳細ログ
-python monitor.py -c config.yaml -v
+# 1分ごとに実行し、LAN へダッシュボードを公開
+python monitor.py -c config.yaml --interval 60 --serve 8088
 
-# cron 向け（警告以上のみ）
-python monitor.py -c config.yaml -q
+# 設定確認のみ
+python monitor.py -c config.yaml --validate
 ```
 
-カテゴリ: `logs` / `ping` / `docker` / `web_health`
+ブラウザで `http://<このマシンのIP>:8088/` を開く。`output/index.html` を直接開いてもよい。
+
+運用手順（systemd / タスクスケジューラ / 通知）は [docs/operations.md](docs/operations.md)。
+
+カテゴリ: `logs` / `ping` / `ports` / `disk` / `docker` / `web_health`
 
 Python から:
 
@@ -69,58 +70,43 @@ with MonitoringSystem("config.yaml") as monitor:
 |--------|------|
 | 0 | 正常（WARNING のみの場合も含む） |
 | 1 | 設定エラーなど、監視を実行できなかった |
-| 2 | 監視失敗（ERROR。Docker 等の NOT_FOUND も含む。ログファイル欠落は含めない） |
+| 2 | 監視失敗（ERROR。Docker 等の NOT_FOUND も含む。ログファイル欠落は含めない）。`--interval` 中は終了せず次周期へ進む |
 | 130 | 中断（Ctrl+C） |
 
 ## 結果ファイル
 
-保存先は `storage.output_folder`。実行のたびに次を更新する。
+保存先は `storage.output_folder`。
 
-- `check_summary.json`: 今回の全結果と件数
-- `error_summary.json`: OK 以外だけ。今回問題が無ければファイル自体を削除する（前回の失敗が残らない）
-- `monitoring_summary.json`: ping / docker / web_health の最新サマリー
-- `log_summary.log`: ログ収集の追記サマリー（本文は末尾 N 行。`settings.log_summary_max_lines`）
-- カテゴリ別フォルダ（`logs/` `ping/` `docker/` `web_health/`）: 日次 JSON
-
-収集したログは `logs/<サーバー名>/<日時>_<ファイル名>` に保存し、上書きしない。
+- `index.html`: ダッシュボード（自動更新）
+- `latest.json`: 今回の全結果
+- `runtime_state.json`: 連続失敗と障害開始時刻
+- `alerts.log`: 障害・回復の履歴
+- `check_summary.json` / `error_summary.json`
+- カテゴリ別の日次 JSON（`settings.retain_days` で掃除）
 
 ## 設定の要点
-
-必須は `storage.output_folder` のみ。それ以外は書いたセクションだけ検証・実行する。
 
 | セクション | 内容 |
 |------------|------|
 | `storage` | 結果の保存先。`~` はホームディレクトリに展開する |
-| `settings` | リトライ・並列数・タイムアウトなど（省略可） |
+| `settings` | リトライ・並列数・保持日数・定期実行の既定秒など |
 | `default_ssh` | サーバー個別指定が無いときの SSH 既定値 |
-| `log_collection` | ログ収集。`delete_after_collection` で収集後削除 |
-| `ping_targets` | Ping 監視 |
-| `docker_monitoring` | SSH 経由のコンテナ状態。`health_check_url` は Docker ホスト上で curl する |
-| `web_health_checks` | 監視ホストからの HTTP チェック。`expected_status` で 200 以外も許可できる |
+| `ping_targets` | Ping。`group` はダッシュボード用 |
+| `port_checks` | TCP ポート |
+| `disk_checks` | SSH で `df -P`。使用率の警告 / 異常閾値 |
+| `log_collection` | ログ収集。定期実行では既定でスキップする |
+| `docker_monitoring` | SSH 経由のコンテナ。`health_check_url` は Docker ホスト上で curl する |
+| `web_health_checks` | 監視ホストからの HTTP。`expected_status` で 200 以外も許可できる |
+| `alerts` | 連続失敗後に通知。Webhook / コマンド / メール |
 
-パスは絶対パスを推奨。SSH は鍵認証のみ。鍵のパーミッションは 600 を推奨。
-
-分割設定（`includes_dir`）の仕様は [docs/configuration.md](docs/configuration.md)。アーキテクチャは [docs/architecture.md](docs/architecture.md)。サンプル全体は [config_sample.yaml](config_sample.yaml)。
-
-### Docker ヘルス判定
-
-`docker inspect` の Health を優先し、無ければ `docker ps` の Status 文字列から判定する。`health_check_url` を書いた場合は Docker ホスト上で curl し、失敗なら ERROR にする。
-
-| ヘルスチェック状態 | BeaconBase の判定 |
-|--------------------|-------------------|
-| `healthy` | OK |
-| `unhealthy` | ERROR |
-| `starting` | WARNING |
-| ヘルスチェック未設定かつ Up | OK |
-| NOT_FOUND | NOT_FOUND |
-| HTTP ヘルスチェック FAIL | ERROR |
+分割設定は [docs/configuration.md](docs/configuration.md)。サンプルは [config_sample.yaml](config_sample.yaml)。
 
 ## 制限事項
 
 - 同時実行数の既定は 5（`settings.max_workers`）
-- SSH 失敗などのリトライ回数の既定は 3、間隔 5 秒
-- Ping タイムアウトの既定は 5 秒。Linux で ICMP が使えない場合は OS の `ping` を使う
-- ログファイルサイズの上限は設けない（サマリーへ載せる行数だけ制限する）
+- 障害判定の連続失敗回数の既定は 2（`alerts.fail_count`）
+- Ping タイムアウトの既定は 5 秒
+- ダッシュボードの HTTP 公開に認証は無い。`--bind 127.0.0.1` で閉じられる
 
 ## ライセンス
 

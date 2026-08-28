@@ -13,7 +13,12 @@
 #   05-settings.yaml         … リトライ・並列数など（省略可）
 #   10-ping_targets.yaml     … Ping（社内）
 #   11-ping_external.yaml    … Ping（外部）※リスト連結の例
+#   12-port_checks.yaml     … TCP ポート
+#   15-disk_checks.yaml     … ディスク使用率
 #   20-log_collection.yaml   … ログ収集
+#   30-docker_monitoring.yaml… Docker
+#   40-web_health_checks.yaml… Web ヘルスチェック
+#   50-alerts.yaml          … 通知
 #   30-docker_monitoring.yaml… Docker
 #   40-web_health_checks.yaml… Web ヘルスチェック
 #

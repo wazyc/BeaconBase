@@ -1,17 +1,20 @@
 # 分割設定サンプル: 実行パラメータ
 # 省略時はコード側のデフォルト値を使う。必要になった項目だけ書けばよい。
 settings:
-  # リトライ回数（SSH 接続失敗など RetryableError 向け）
   retry_count: 3
-  # リトライ間隔（秒）
   retry_delay: 5
-  # SSH コマンドなどの操作タイムアウト（秒）
   timeout: 30
-  # カテゴリ内の並列数（Ping / Web など）
   max_workers: 5
-  # ping3 / OS ping の待ち時間（秒）
   ping_timeout: 5
-  # SSH 接続タイムアウト（秒）
   ssh_timeout: 15
-  # log_summary.log に載せるログ本文の最大行数（0 で制限なし）
   log_summary_max_lines: 80
+  # 日次 JSON の保持日数。0 で無制限
+  retain_days: 14
+  # --interval の秒数省略時に使う
+  interval_seconds: 60
+  # 定期実行でもログ収集するなら true（既定は死活監視のみ）
+  interval_include_logs: false
+  # ダッシュボードの自動更新秒
+  dashboard_refresh_seconds: 30
+  # 指定すると監視ログをファイルにも残す
+  # log_file: "./output/beaconbase.log"
