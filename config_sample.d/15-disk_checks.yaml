@@ -1,0 +1,10 @@
+# 分割設定サンプル: ディスク使用率（SSH で df -P）
+# warn_percent 以上で WARNING、error_percent 以上で ERROR。
+disk_checks:
+  servers:
+    - name: "nas"
+      host: "192.168.1.50"
+      group: "storage"
+      warn_percent: 85
+      error_percent: 95
+      # SSH を省略したサーバーは default_ssh を使う

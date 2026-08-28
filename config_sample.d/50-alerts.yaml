@@ -1,0 +1,26 @@
+# 分割設定サンプル: 通知
+# 状態が変わったとき（連続失敗が fail_count に達したとき）に知らせる。
+# webhook.url / command / email.smtp_host が空なら、alerts.log にだけ残る。
+alerts:
+  enabled: true
+  # 連続何回失敗してから「障害」とみなすか（瞬断の誤報を減らす）
+  fail_count: 2
+  # 同じ障害の再通知間隔（秒）。0 なら状態変化時のみ
+  remind_seconds: 3600
+  webhook:
+    # Slack Incoming Webhook / Discord Webhook / 汎用 JSON POST
+    url: ""
+    format: auto
+    timeout: 10
+  # 標準入力に通知文を渡して実行する（LAN 内の自作スクリプト向け）
+  command: ""
+  email:
+    smtp_host: ""
+    smtp_port: 587
+    use_tls: true
+    username: ""
+    # パスワードは設定に書かず環境変数 BEACONBASE_SMTP_PASSWORD を推奨
+    password: ""
+    from: ""
+    to: []
+    subject: "BeaconBase 監視通知"

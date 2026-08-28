@@ -1,0 +1,22 @@
+# 分割設定サンプル: TCP ポート監視
+# Ping は通るがサービスが落ちている、を拾う。
+# group はダッシュボードの表示用（任意）。
+port_checks:
+  targets:
+    - name: "nas-smb"
+      host: "192.168.1.50"
+      port: 445
+      timeout: 3
+      group: "storage"
+
+    - name: "dns-tcp"
+      host: "192.168.1.1"
+      port: 53
+      timeout: 2
+      group: "network"
+
+    - name: "web-http"
+      host: "192.168.1.100"
+      port: 80
+      timeout: 3
+      group: "web"

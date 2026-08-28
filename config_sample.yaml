@@ -24,6 +24,9 @@ settings:
   ping_timeout: 5
   ssh_timeout: 15
   log_summary_max_lines: 80
+  retain_days: 14
+  dashboard_refresh_seconds: 30
+  # log_file: "./output/beaconbase.log"
 
 # ============================================================
 # ストレージ設定
@@ -99,6 +102,7 @@ ping_targets:
   # --- ネットワーク機器の例 ---
   - name: "main-gateway"
     host: "192.168.1.1"
+    group: "network"
 
   - name: "core-switch"
     host: "192.168.1.2"
@@ -116,6 +120,50 @@ ping_targets:
   # --- 外部サービスの例 ---
   - name: "dns-server"
     host: "8.8.8.8"
+
+# ============================================================
+# TCP ポート監視（サービス死活）
+# ============================================================
+port_checks:
+  targets:
+    - name: "nas-smb"
+      host: "192.168.1.50"
+      port: 445
+      timeout: 3
+      group: "storage"
+    - name: "dns-tcp"
+      host: "192.168.1.1"
+      port: 53
+      timeout: 2
+      group: "network"
+
+# ============================================================
+# ディスク使用率（SSH で df -P）
+# ============================================================
+disk_checks:
+  servers:
+    - name: "nas"
+      host: "192.168.1.50"
+      group: "storage"
+      warn_percent: 85
+      error_percent: 95
+
+# ============================================================
+# 通知（状態変化時。空の URL なら alerts.log のみ）
+# ============================================================
+alerts:
+  enabled: true
+  fail_count: 2
+  remind_seconds: 3600
+  webhook:
+    url: ""
+    format: auto
+  command: ""
+  email:
+    smtp_host: ""
+    smtp_port: 587
+    use_tls: true
+    to: []
 
 # ============================================================
 # Dockerコンテナ監視設定

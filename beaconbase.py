@@ -28,6 +28,7 @@ import logging
 import os
 import re
 import shlex
+import socket
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -49,7 +50,7 @@ from config_loader import (
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 # 後方互換のための再エクスポート
 __all__ = [
@@ -65,7 +66,7 @@ __all__ = [
 ]
 
 # CLI / --only で指定できる監視カテゴリ
-CHECK_CATEGORIES = ("logs", "ping", "docker", "web_health")
+CHECK_CATEGORIES = ("logs", "ping", "ports", "disk", "docker", "web_health")
 
 
 class CheckStatus(Enum):
@@ -136,6 +137,10 @@ class MonitoringSystem:
     DEFAULT_PING_TIMEOUT = 5
     DEFAULT_SSH_TIMEOUT = 15
     DEFAULT_LOG_SUMMARY_MAX_LINES = 80
+    DEFAULT_RETAIN_DAYS = 14
+    DEFAULT_DASHBOARD_REFRESH = 30
+    DEFAULT_FAIL_COUNT = 2
+    DEFAULT_REMIND_SECONDS = 3600
 
     def __init__(self, config_path: str):
         """初期化
@@ -171,6 +176,13 @@ class MonitoringSystem:
         self.log_summary_max_lines = int(
             settings.get("log_summary_max_lines", self.DEFAULT_LOG_SUMMARY_MAX_LINES)
         )
+        self.retain_days = int(settings.get("retain_days", self.DEFAULT_RETAIN_DAYS))
+        self.dashboard_refresh_seconds = int(
+            settings.get("dashboard_refresh_seconds", self.DEFAULT_DASHBOARD_REFRESH)
+        )
+        self.log_file = settings.get("log_file")
+        if self.log_file:
+            self._attach_file_logger(self._expand_path(str(self.log_file)))
 
     def _validate_and_create_directories(self):
         """出力ディレクトリの検証と作成"""
@@ -204,6 +216,25 @@ class MonitoringSystem:
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         )
         self.logger = logging.getLogger("BeaconBase")
+
+    def _attach_file_logger(self, log_path: str) -> None:
+        """同一ファイルへの FileHandler が無ければ追加する（定期実行で重複しない）。"""
+        from logging.handlers import RotatingFileHandler
+
+        os.makedirs(os.path.dirname(log_path) or ".", exist_ok=True)
+        abs_path = os.path.abspath(log_path)
+        for handler in self.logger.handlers:
+            if isinstance(handler, RotatingFileHandler) and getattr(
+                handler, "baseFilename", ""
+            ) == abs_path:
+                return
+        handler = RotatingFileHandler(
+            abs_path, maxBytes=2_000_000, backupCount=5, encoding="utf-8"
+        )
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        )
+        self.logger.addHandler(handler)
 
     @staticmethod
     def _expand_path(path: Optional[str]) -> str:
@@ -259,6 +290,10 @@ class MonitoringSystem:
             enabled.append("logs")
         if self._ping_targets():
             enabled.append("ping")
+        if self._port_targets():
+            enabled.append("ports")
+        if self._disk_servers():
+            enabled.append("disk")
         if self._docker_servers():
             enabled.append("docker")
         if self._web_targets():
@@ -284,6 +319,25 @@ class MonitoringSystem:
         targets = section.get("targets") if isinstance(section, dict) else None
         return list(targets) if isinstance(targets, list) else []
 
+    def _port_targets(self) -> List[Dict[str, Any]]:
+        section = self.config.get("port_checks") or {}
+        targets = section.get("targets") if isinstance(section, dict) else None
+        if isinstance(section, list):
+            return list(section)
+        return list(targets) if isinstance(targets, list) else []
+
+    def _disk_servers(self) -> List[Dict[str, Any]]:
+        section = self.config.get("disk_checks") or {}
+        servers = section.get("servers") if isinstance(section, dict) else None
+        return list(servers) if isinstance(servers, list) else []
+
+    @staticmethod
+    def _with_group(details: Dict[str, Any], target: Dict[str, Any]) -> Dict[str, Any]:
+        group = target.get("group")
+        if group:
+            details["group"] = str(group)
+        return details
+
     def run_all_checks(
         self, categories: Optional[Sequence[str]] = None
     ) -> Dict[str, List[CheckResult]]:
@@ -301,6 +355,8 @@ class MonitoringSystem:
         check_functions: Dict[str, Callable[[], List[CheckResult]]] = {
             "logs": self.collect_logs,
             "ping": self.check_ping,
+            "ports": self.check_ports,
+            "disk": self.check_disks,
             "docker": self.check_docker_containers,
             "web_health": self.check_web_health,
         }
@@ -324,6 +380,7 @@ class MonitoringSystem:
             results: Dict[str, List[CheckResult]] = {}
             self._write_check_summary(results)
             self._write_error_summary(results)
+            self._finalize_run(results)
             return results
 
         try:
@@ -357,6 +414,7 @@ class MonitoringSystem:
 
             self._write_check_summary(results)
             self._write_error_summary(results)
+            self._finalize_run(results)
             return results
 
         except Exception as e:
@@ -532,13 +590,15 @@ class MonitoringSystem:
                 name=name,
                 status=CheckStatus.OK,
                 timestamp=self._now_iso(),
-                details={"host": host, "response_time": response_time},
+                details=self._with_group(
+                    {"host": host, "response_time": response_time}, target
+                ),
             )
         return CheckResult(
             name=name,
             status=CheckStatus.ERROR,
             timestamp=self._now_iso(),
-            details={"host": host, "error": "Host unreachable"},
+            details=self._with_group({"host": host, "error": "Host unreachable"}, target),
         )
 
     def _ping_host(self, host: str) -> Optional[float]:
@@ -589,6 +649,194 @@ class MonitoringSystem:
         except Exception as e:
             self.logger.error(f"{host} への ping に失敗しました: {e}")
             return None
+
+    def check_ports(self) -> List[CheckResult]:
+        """TCP ポートの待ち受け確認（LAN のサービス死活）。"""
+        targets = self._port_targets()
+        if not targets:
+            return []
+        results_by_index: Dict[int, CheckResult] = {}
+        workers = min(self.max_workers, len(targets)) or 1
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            future_map = {
+                executor.submit(self._check_port_target, target): idx
+                for idx, target in enumerate(targets)
+            }
+            for future in as_completed(future_map):
+                results_by_index[future_map[future]] = future.result()
+        return [results_by_index[i] for i in range(len(targets))]
+
+    def _check_port_target(self, target: Dict[str, Any]) -> CheckResult:
+        host = target.get("host", "")
+        name = target.get("name", host or "unknown")
+        try:
+            port = int(target.get("port"))
+        except (TypeError, ValueError):
+            return CheckResult(
+                name=name,
+                status=CheckStatus.ERROR,
+                timestamp=self._now_iso(),
+                details=self._with_group(
+                    {"host": host, "error": "port が整数ではありません"}, target
+                ),
+            )
+        timeout = float(target.get("timeout", 3))
+        ok, elapsed, error = self._tcp_connect(host, port, timeout)
+        details = {"host": host, "port": port, "response_time": elapsed}
+        if ok:
+            return CheckResult(
+                name=name,
+                status=CheckStatus.OK,
+                timestamp=self._now_iso(),
+                details=self._with_group(details, target),
+            )
+        details["error"] = error or f"{host}:{port} に接続できません"
+        return CheckResult(
+            name=name,
+            status=CheckStatus.ERROR,
+            timestamp=self._now_iso(),
+            details=self._with_group(details, target),
+        )
+
+    @staticmethod
+    def _tcp_connect(host: str, port: int, timeout: float) -> tuple:
+        """TCP 接続を試し、(成功, 秒, エラーメッセージ) を返す。"""
+        start = time.time()
+        try:
+            with socket.create_connection((host, port), timeout=timeout):
+                elapsed = time.time() - start
+                return True, elapsed, None
+        except Exception as e:
+            return False, time.time() - start, str(e)
+
+    def check_disks(self) -> List[CheckResult]:
+        """SSH 経由で df -P を取り、ディスク使用率を判定する。"""
+        results: List[CheckResult] = []
+        for server in self._disk_servers():
+            name = server.get("name") or server.get("host") or "unknown"
+            try:
+                results.append(
+                    self.retry_operation(self._check_disk_server, server)
+                )
+            except Exception as e:
+                self.logger.error(f"{name} のディスク監視に失敗しました: {e}")
+                results.append(
+                    CheckResult(
+                        name=name,
+                        status=CheckStatus.ERROR,
+                        timestamp=self._now_iso(),
+                        details=self._with_group(
+                            {
+                                "host": server.get("host"),
+                                "error": str(e),
+                            },
+                            server,
+                        ),
+                    )
+                )
+        return results
+
+    def _check_disk_server(self, server: Dict[str, Any]) -> CheckResult:
+        name = server.get("name") or server.get("host") or "unknown"
+        host = server.get("host", "")
+        warn_percent = float(server.get("warn_percent", 85))
+        error_percent = float(server.get("error_percent", 95))
+        ssh = self._connect_ssh(server)
+        try:
+            _stdin, stdout, stderr = ssh.exec_command("df -P", timeout=self.timeout)
+            out = stdout.read().decode("utf-8", errors="replace")
+            err = stderr.read().decode("utf-8", errors="replace")
+            filesystems = self.parse_df_p(out)
+            if not filesystems:
+                raise MonitoringError(
+                    f"df -P の結果を解析できませんでした: {err or out[:200]}"
+                )
+            worst = max(filesystems, key=lambda row: row["use_percent"])
+            use_percent = worst["use_percent"]
+            if use_percent >= error_percent:
+                status = CheckStatus.ERROR
+            elif use_percent >= warn_percent:
+                status = CheckStatus.WARNING
+            else:
+                status = CheckStatus.OK
+            details = self._with_group(
+                {
+                    "host": host,
+                    "use_percent": use_percent,
+                    "worst_mount": worst["mount"],
+                    "filesystems": filesystems,
+                    "warn_percent": warn_percent,
+                    "error_percent": error_percent,
+                },
+                server,
+            )
+            if status != CheckStatus.OK:
+                details["error"] = (
+                    f"{worst['mount']} の使用率 {use_percent:.0f}%"
+                    f"（警告 {warn_percent:.0f}% / 異常 {error_percent:.0f}%）"
+                )
+            return CheckResult(
+                name=name,
+                status=status,
+                timestamp=self._now_iso(),
+                details=details,
+            )
+        finally:
+            ssh.close()
+
+    _SKIP_FS_TYPES = {
+        "tmpfs",
+        "devtmpfs",
+        "overlay",
+        "squashfs",
+        "proc",
+        "sysfs",
+        "cgroup",
+        "cgroup2",
+        "devpts",
+        "efivarfs",
+    }
+
+    @classmethod
+    def parse_df_p(cls, text: str) -> List[Dict[str, Any]]:
+        """POSIX df -P の出力から実ファイルシステムを抜き出す。"""
+        rows: List[Dict[str, Any]] = []
+        for line in (text or "").splitlines()[1:]:
+            parts = line.split()
+            if len(parts) < 6:
+                continue
+            filesystem, _blocks, used, available, capacity, mount = (
+                parts[0],
+                parts[1],
+                parts[2],
+                parts[3],
+                parts[4],
+                parts[5],
+            )
+            fs_l = filesystem.lower()
+            if filesystem in cls._SKIP_FS_TYPES or fs_l in cls._SKIP_FS_TYPES:
+                continue
+            if mount.startswith(("/dev", "/run", "/sys", "/proc")):
+                continue
+            match = re.search(r"(\d+)", capacity)
+            if not match:
+                continue
+            try:
+                used_i = int(used)
+                available_i = int(available)
+            except ValueError:
+                used_i = 0
+                available_i = 0
+            rows.append(
+                {
+                    "filesystem": filesystem,
+                    "mount": mount,
+                    "use_percent": int(match.group(1)),
+                    "used": used_i,
+                    "available": available_i,
+                }
+            )
+        return rows
 
     @staticmethod
     def _status_from_container_status(container_status: Dict[str, Any]) -> CheckStatus:
@@ -654,6 +902,7 @@ class MonitoringSystem:
             for container in server.get("containers") or []:
                 container_status = self._check_container_via_ssh(ssh, container)
                 container_status["host"] = server.get("host")
+                self._with_group(container_status, server)
                 status = self._status_from_container_status(container_status)
                 name = container.get("name", "unknown")
                 host = server.get("host", "")
@@ -816,6 +1065,7 @@ class MonitoringSystem:
                 "response_time": response_time,
                 "expected_status": expected,
             }
+            self._with_group(details, target)
             if not ok:
                 details["error"] = (
                     f"HTTP {response.status_code} "
@@ -833,7 +1083,9 @@ class MonitoringSystem:
                 name=name,
                 status=CheckStatus.ERROR,
                 timestamp=self._now_iso(),
-                details={"url": url, "error": str(e), "expected_status": expected},
+                details=self._with_group(
+                    {"url": url, "error": str(e), "expected_status": expected}, target
+                ),
             )
 
     def _save_results(self, data: List[CheckResult], category: str) -> None:
@@ -858,7 +1110,7 @@ class MonitoringSystem:
         existing_data.extend([result.to_dict() for result in data])
         self._write_json(path, existing_data)
 
-        if category in ["ping", "docker", "web_health"]:
+        if category in ["ping", "docker", "web_health", "ports", "disk"]:
             self._update_summary(category, data)
         elif category == "logs":
             self._update_log_summary(data)
@@ -901,8 +1153,8 @@ class MonitoringSystem:
                 }
                 for result in data
             ]
-        elif category == "web_health":
-            summary["web_health"] = [
+        elif category in ("web_health", "ports", "disk"):
+            summary[category] = [
                 {
                     "name": result.name,
                     "status": result.status.name,
@@ -1056,8 +1308,7 @@ class MonitoringSystem:
             "results": {},
         }
         for category, data in results.items():
-            if category in ["docker", "ping", "web_health", "logs"]:
-                summary["results"][category] = [result.to_dict() for result in data]
+            summary["results"][category] = [result.to_dict() for result in data]
         self._write_json(summary_path, summary)
 
     def _write_error_summary(self, results: Dict[str, List[CheckResult]]) -> None:
@@ -1091,6 +1342,74 @@ class MonitoringSystem:
                 self.logger.warning(
                     f"前回の error_summary.json を削除できませんでした: {e}"
                 )
+
+    def _finalize_run(self, results: Dict[str, List[CheckResult]]) -> None:
+        """状態保存・通知・ダッシュボード・古い結果の掃除。"""
+        from alerts import AlertDispatcher
+        from dashboard import write_dashboard
+        from status_store import StatusStore
+
+        output_folder = self.config["storage"]["output_folder"]
+        alerts_cfg = self.config.get("alerts") if isinstance(self.config.get("alerts"), dict) else {}
+        fail_count = int(alerts_cfg.get("fail_count", self.DEFAULT_FAIL_COUNT))
+        remind_seconds = float(alerts_cfg.get("remind_seconds", self.DEFAULT_REMIND_SECONDS))
+        store = StatusStore(output_folder)
+        events = store.update(
+            results,
+            fail_count=fail_count,
+            remind_seconds=remind_seconds,
+        )
+        store.save()
+        AlertDispatcher(self.config, output_folder).notify(events)
+        write_dashboard(
+            output_folder,
+            results,
+            store=store,
+            refresh_seconds=self.dashboard_refresh_seconds,
+        )
+        self._retain_old_files()
+        latest_path = os.path.join(output_folder, "latest.json")
+        self._write_json(
+            latest_path,
+            {
+                "timestamp": self._now_iso(),
+                "counts": self.count_statuses(results),
+                "results": {
+                    category: [result.to_dict() for result in data]
+                    for category, data in results.items()
+                },
+            },
+        )
+        if events:
+            self.logger.info(f"通知 {len(events)} 件")
+
+    def _retain_old_files(self) -> None:
+        """日次 JSON を retain_days より古ければ削除する。0 以下は無制限。"""
+        if self.retain_days <= 0:
+            return
+        cutoff = datetime.now().timestamp() - (self.retain_days * 86400)
+        output_folder = self.config["storage"]["output_folder"]
+        for category in CHECK_CATEGORIES:
+            category_dir = os.path.join(output_folder, category)
+            if not os.path.isdir(category_dir):
+                continue
+            for name in os.listdir(category_dir):
+                match = re.match(
+                    rf"{re.escape(category)}_(\d{{8}})\.json$", name
+                )
+                if not match:
+                    continue
+                try:
+                    file_dt = datetime.strptime(match.group(1), "%Y%m%d")
+                except ValueError:
+                    continue
+                path = os.path.join(category_dir, name)
+                if file_dt.timestamp() < cutoff:
+                    try:
+                        os.remove(path)
+                        self.logger.info(f"古い結果を削除しました: {path}")
+                    except OSError as e:
+                        self.logger.warning(f"削除できませんでした: {path}: {e}")
 
     def validate_config(self) -> Optional[str]:
         """設定ファイルの検証。
@@ -1180,6 +1499,45 @@ class MonitoringSystem:
 
             if "settings" in self.config and not isinstance(self.config["settings"], dict):
                 return "settings はマッピングである必要があります"
+
+            if "port_checks" in self.config:
+                port_cfg = self.config["port_checks"]
+                targets = None
+                if isinstance(port_cfg, dict):
+                    targets = port_cfg.get("targets")
+                elif isinstance(port_cfg, list):
+                    targets = port_cfg
+                else:
+                    return "port_checks はマッピングまたはリストである必要があります"
+                if not isinstance(targets, list):
+                    return "port_checks.targets はリストである必要があります"
+                for target in targets:
+                    missing = [f for f in ("name", "host", "port") if f not in target]
+                    if missing:
+                        return f"port_checks の必須項目がありません: {missing}"
+
+            if "disk_checks" in self.config:
+                disk_cfg = self.config["disk_checks"]
+                if not isinstance(disk_cfg, dict):
+                    return "disk_checks はマッピングである必要があります"
+                servers = disk_cfg.get("servers", [])
+                if not isinstance(servers, list):
+                    return "disk_checks.servers はリストである必要があります"
+                for server in servers:
+                    missing = [f for f in ("name", "host") if f not in server]
+                    if missing:
+                        return f"disk_checks の必須項目がありません: {missing}"
+
+            if "alerts" in self.config:
+                alerts = self.config["alerts"]
+                if not isinstance(alerts, dict):
+                    return "alerts はマッピングである必要があります"
+                webhook = alerts.get("webhook")
+                if webhook is not None and not isinstance(webhook, dict):
+                    return "alerts.webhook はマッピングである必要があります"
+                email = alerts.get("email")
+                if email is not None and not isinstance(email, dict):
+                    return "alerts.email はマッピングである必要があります"
 
             return None
         except Exception as e:

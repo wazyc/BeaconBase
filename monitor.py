@@ -2,31 +2,10 @@
 """
 BeaconBase - インフラ統合監視システム
 
-このスクリプトは、BeaconBaseの監視機能を実行するためのコマンドラインインターフェースを提供します。
-設定ファイルに基づいて以下の監視を実行します：
-- サーバーログの収集
-- ネットワーク機器のPing監視
-- Dockerコンテナの状態監視
-- Web APIの健全性チェック
-- Webページのヘルスチェック
-
-監視結果は以下のファイルに出力されます：
-- check_summary.json: 全ての監視結果
-- error_summary.json: エラーのみの監視結果（正常ではないチェック結果のみ）
-- log_summary.log: ログ収集のサマリー
-
 使用方法:
     python monitor.py -c config.yaml
-    python monitor.py -c config.yaml --only ping,web_health
+    python monitor.py -c config.yaml --only ping,ports
     python monitor.py -c config.yaml --validate
-
-オプション:
-    -c, --config     設定ファイルのパス（デフォルト: config.yaml）
-    -v, --verbose    詳細なログ出力を有効化
-    -q, --quiet      警告以上のみ出力
-    --only           実行するカテゴリ（カンマ区切り）
-    --validate       設定の検証のみ行う
-    --version        バージョンを表示
 
 終了コード:
     0: 正常終了
@@ -34,6 +13,8 @@ BeaconBase - インフラ統合監視システム
     2: 監視エラー（一部の監視が失敗）
     130: ユーザーによる中断
 """
+
+from __future__ import annotations
 
 import argparse
 import logging
@@ -50,11 +31,7 @@ from beaconbase import (
 
 
 class MonitoringCLI:
-    """BeaconBaseのコマンドラインインターフェース
-
-    このクラスは、コマンドライン引数の解析と
-    MonitoringSystemの実行を管理します。
-    """
+    """BeaconBaseのコマンドラインインターフェース"""
 
     EXIT_SUCCESS = 0
     EXIT_ERROR = 1
@@ -62,48 +39,35 @@ class MonitoringCLI:
     EXIT_KEYBOARD_INTERRUPT = 130
 
     def __init__(self, argv=None):
-        """CLIの初期化
-
-        Args:
-            argv: 引数リスト。None なら sys.argv を使う（テスト用に差し替え可能）。
-        """
         self.logger = self._setup_logger()
         self.args = self._parse_arguments(argv)
 
     def _setup_logger(self) -> logging.Logger:
-        """ロギングの設定"""
         logging.basicConfig(
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
         return logging.getLogger("BeaconBase-CLI")
 
     def _parse_arguments(self, argv=None) -> argparse.Namespace:
-        """コマンドライン引数の解析"""
         parser = argparse.ArgumentParser(
-            description="BeaconBase - インフラ統合監視システム",
+            description="BeaconBase - ローカルネットワーク監視",
             formatter_class=argparse.RawDescriptionHelpFormatter,
             epilog="""
 例:
-  # 設定どおりに全監視を実行
   python monitor.py -c config.yaml
-
-  # Ping と Web だけ実行
-  python monitor.py -c config.yaml --only ping,web_health
-
-  # 設定の検証のみ（監視は走らせない）
+  python monitor.py -c config.yaml --only ping,ports
   python monitor.py -c config.yaml --validate
 
-  # 詳細ログ
-  python monitor.py -c config.yaml -v
+カテゴリ: logs, ping, ports, disk, docker, web_health
 
-カテゴリ: logs, ping, docker, web_health
+定期実行する場合は cron やタスク スケジューラから、このコマンドを都度起動する。
             """,
         )
         parser.add_argument(
             "--config",
             "-c",
             default="config.yaml",
-            help="監視設定のメインYAMLパス（ルートの includes_dir で分割ディレクトリを読み込み可。デフォルト: config.yaml）",
+            help="監視設定のメインYAMLパス（デフォルト: config.yaml）",
         )
         parser.add_argument(
             "--verbose",
@@ -138,7 +102,6 @@ class MonitoringCLI:
         return parser.parse_args(argv)
 
     def _set_log_level(self):
-        """ログレベルの設定"""
         if self.args.quiet:
             log_level = logging.WARNING
         elif self.args.verbose:
@@ -149,7 +112,6 @@ class MonitoringCLI:
         logging.getLogger("BeaconBase").setLevel(log_level)
 
     def _parse_only(self):
-        """--only の値をカテゴリのリストにする。未指定なら None。"""
         if not self.args.only:
             return None
         selected = [part.strip() for part in self.args.only.split(",") if part.strip()]
@@ -164,11 +126,6 @@ class MonitoringCLI:
         return selected
 
     def run(self) -> int:
-        """監視の実行
-
-        Returns:
-            int: プロセスの終了コード
-        """
         self._set_log_level()
         self.logger.info("BeaconBase を開始します")
 
@@ -192,6 +149,8 @@ class MonitoringCLI:
                     print("設定は問題ありません。")
                     if enabled:
                         print("有効な監視: " + ", ".join(enabled))
+                    dash = monitor.config["storage"]["output_folder"]
+                    print(f"ダッシュボード: {dash}/index.html （監視実行後）")
                     return self.EXIT_SUCCESS
 
                 self.logger.info("監視を実行します...")
@@ -236,7 +195,6 @@ class MonitoringCLI:
 
 
 def main(argv=None) -> int:
-    """メインエントリーポイント"""
     cli = MonitoringCLI(argv)
     return cli.run()
 
