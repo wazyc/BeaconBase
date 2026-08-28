@@ -4,7 +4,6 @@
 #   1. このファイルをconfig.yamlとしてコピー
 #   2. 各セクションを環境に合わせて編集
 #   3. python monitor.py -c config.yaml で実行
-#   常駐: python monitor.py -c config.yaml --interval 60 --serve 8088
 #
 # 設定を複数YAMLに分ける場合:
 #   - メインYAMLのルートで includes_dir: にディレクトリ相対パス（文字列）を書きます。
@@ -26,8 +25,6 @@ settings:
   ssh_timeout: 15
   log_summary_max_lines: 80
   retain_days: 14
-  interval_seconds: 60
-  interval_include_logs: false
   dashboard_refresh_seconds: 30
   # log_file: "./output/beaconbase.log"
 

@@ -1,40 +1,30 @@
 # 運用
 
-ローカルネットワークで常時監視するための手順である。死活は Ping と TCP ポート、容量は SSH のディスク、アプリは Web / Docker を組み合わせる。
+起動したときだけ監視する。常駐プロセスは持たない。定期的に見たい場合は OS の cron やタスク スケジューラから、同じコマンドを都度起動する。
 
 ## まず動かす
 
 ```bash
 python monitor.py -c config.yaml --validate
 python monitor.py -c config.yaml --only ping,ports
+python monitor.py -c config.yaml
 ```
 
-問題が無ければ定期実行とダッシュボードを同時に出す。
+結果は `storage.output_folder` に出る。ダッシュボードは `index.html` をブラウザで開く。
 
-```bash
-python monitor.py -c config.yaml --interval 60 --serve 8088
+## cron（Linux）
+
+5 分ごとに1回実行する例:
+
+```cron
+*/5 * * * * /opt/beaconbase/venv/bin/python /opt/beaconbase/monitor.py -c /opt/beaconbase/config.yaml -q
 ```
 
-ブラウザで `http://<このマシンのLAN IP>:8088/` を開く。`index.html` は結果フォルダにも書かれるので、HTTP を出さずにファイルを直接開いてもよい。
-
-定期実行ではログ収集は走らない（SSH でファイルを毎回取るのは重いため）。必要なら `settings.interval_include_logs: true` か `--only logs` を使う。
-
-## systemd（Linux）
-
-1. リポジトリを `/opt/beaconbase` などに置く
-2. `contrib/beaconbase.service` をコピーし、パスを直す
-3. `sudo systemctl enable --now beaconbase`
-
-```bash
-sudo cp contrib/beaconbase.service /etc/systemd/system/beaconbase.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now beaconbase
-sudo journalctl -u beaconbase -f
-```
+`contrib/crontab.example` も同じ内容である。ログ収集を毎回走らせたくないときは `--only ping,ports,disk,docker,web_health` を付ける。
 
 ## Windows タスク スケジューラ
 
-管理者 PowerShell 例（5 分ごとワンショット。常駐させるなら `--interval` のスタートアップタスクでもよい）:
+管理者 PowerShell 例（5 分ごと）:
 
 ```powershell
 schtasks /Create /SC MINUTE /MO 5 /TN BeaconBase /TR "C:\beaconbase\venv\Scripts\python.exe C:\beaconbase\monitor.py -c C:\beaconbase\config.yaml -q"
@@ -42,7 +32,9 @@ schtasks /Create /SC MINUTE /MO 5 /TN BeaconBase /TR "C:\beaconbase\venv\Scripts
 
 ## 通知
 
-`alerts.log` は常に残る。外部へ出す場合:
+`alerts.log` は実行のたびに追記する。状態は `runtime_state.json` に残るので、cron で間をおいて起動しても連続失敗や回復を判定できる。
+
+外部へ出す場合:
 
 - `alerts.webhook.url` … Slack / Discord / 汎用 JSON POST。`format: auto` で URL から判別する
 - `alerts.command` … 通知文を標準入力に渡して実行する
@@ -69,4 +61,3 @@ schtasks /Create /SC MINUTE /MO 5 /TN BeaconBase /TR "C:\beaconbase\venv\Scripts
 - `group` を付けるとダッシュボードで役割が分かる
 - Ping だけでなく、NAS なら 445、ルータなら 53 などポートも見る
 - ディスクは SSH 鍵が届くサーバだけでよい
-- `--bind 127.0.0.1` にすればダッシュボードをそのマシンだけに閉じる

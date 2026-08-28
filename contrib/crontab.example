@@ -1,0 +1,2 @@
+# cron から都度起動する例（5分ごと）。パスは環境に合わせて直す。
+*/5 * * * * /opt/beaconbase/venv/bin/python /opt/beaconbase/monitor.py -c /opt/beaconbase/config.yaml -q

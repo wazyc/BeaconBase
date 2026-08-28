@@ -6,7 +6,7 @@ BeaconBase は CLI から設定を読み込み、死活・容量・コンテナ�
 
 | モジュール | 役割 |
 |------------|------|
-| `monitor.py` | CLI（引数、定期実行、ダッシュボード HTTP） |
+| `monitor.py` | CLI（引数解析、終了コード、コンソールサマリー） |
 | `beaconbase.py` | `MonitoringSystem` 本体、`CheckStatus` / `CheckResult` |
 | `config_loader.py` | YAML 読込と `includes_dir` マージ |
 | `exceptions.py` | `MonitoringError` / `RetryableError` |
@@ -31,11 +31,12 @@ flowchart TD
   cli --> load --> ms --> val --> checks --> save --> state --> dash
 ```
 
-1. CLI が設定パスと `--only` / `--interval` / `--serve` を受け取る
+1. CLI が設定パスと `--only` / `--validate` を受け取る
 2. 設定をマージし、書かれているセクションを検証する
-3. 対象カテゴリを並列実行する。定期実行ではログ収集を既定で除外する
+3. 対象カテゴリを並列実行する
 4. サマリー JSON を書き、状態ファイルを更新して通知イベントを出す
 5. ダッシュボードを書き、古い日次 JSON を削除する
+6. プロセスを終了する（常駐しない）
 
 ## Ping とポート
 
@@ -55,7 +56,7 @@ SSH 上で `df -P` を実行し、tmpfs などを除いた最大使用率で WAR
 
 ## 終了コード
 
-ERROR は常に失敗（終了コード 2）。ログ収集の NOT_FOUND は失敗にしない。`--interval` 中は 2 でプロセスを終えず、次の周期を待つ。
+ERROR は常に失敗（終了コード 2）。ログ収集の NOT_FOUND は失敗にしない。cron から間をおいて起動しても `runtime_state.json` で連続失敗を判定する。
 
 ## 設定の詳細
 

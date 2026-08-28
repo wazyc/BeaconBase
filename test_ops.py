@@ -260,27 +260,6 @@ class TestDashboardAndRetention:
         assert not os.path.exists(old)
         assert os.path.exists(new)
 
-    def test_interval_skips_logs(self, tmp_path):
-        config = _write_config(
-            str(tmp_path),
-            {
-                "log_collection": {
-                    "servers": [
-                        {
-                            "name": "s",
-                            "host": "127.0.0.1",
-                            "log_paths": ["/var/log/a.log"],
-                        }
-                    ]
-                },
-                "ping_targets": [{"name": "gw", "host": "192.0.2.1"}],
-            },
-        )
-        system = MonitoringSystem(config)
-        selected = system.resolve_categories(None, interval_mode=True)
-        assert "logs" not in selected
-        assert "ping" in selected
-
 
 class TestOpsCLI:
     def test_validate_port_checks_missing_port(self, tmp_path):
@@ -293,12 +272,3 @@ class TestOpsCLI:
         with patch("sys.argv", ["monitor.py", "-c", config, "--validate"]):
             code = MonitoringCLI().run()
         assert code == 1
-
-    def test_cli_interval_skips_second_run_with_keyboard(self, tmp_path):
-        from monitor import MonitoringCLI
-
-        config = _write_config(str(tmp_path), {"ping_targets": []})
-        with patch("sys.argv", ["monitor.py", "-c", config, "--interval", "0.01"]):
-            with patch("monitor.MonitoringCLI._interruptible_sleep", side_effect=KeyboardInterrupt()):
-                code = MonitoringCLI().run()
-        assert code == 130

@@ -180,7 +180,6 @@ class MonitoringSystem:
         self.dashboard_refresh_seconds = int(
             settings.get("dashboard_refresh_seconds", self.DEFAULT_DASHBOARD_REFRESH)
         )
-        self.interval_include_logs = bool(settings.get("interval_include_logs", False))
         self.log_file = settings.get("log_file")
         if self.log_file:
             self._attach_file_logger(self._expand_path(str(self.log_file)))
@@ -338,19 +337,6 @@ class MonitoringSystem:
         if group:
             details["group"] = str(group)
         return details
-
-    def resolve_categories(
-        self,
-        categories: Optional[Sequence[str]] = None,
-        interval_mode: bool = False,
-    ) -> Optional[List[str]]:
-        """実行カテゴリを決める。interval ではログ収集を既定で除外する。"""
-        if categories is not None:
-            return list(categories)
-        if interval_mode and not self.interval_include_logs:
-            enabled = [c for c in self.enabled_categories() if c != "logs"]
-            return enabled
-        return None
 
     def run_all_checks(
         self, categories: Optional[Sequence[str]] = None
