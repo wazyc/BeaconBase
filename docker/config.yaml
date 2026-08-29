@@ -1,0 +1,6 @@
+# コンテナ用エントリ設定（初回のみ /data へコピーされる）
+#
+# WEB UI の「設定」から編集できる。
+# SSH 鍵は docker-compose で ./ssh を /ssh にマウントする。
+
+includes_dir: config.d

@@ -1,0 +1,344 @@
+/* BeaconBase WEB UI — 運用ダッシュボード向け */
+:root {
+  --bg: #f3f6f4;
+  --bg-accent: #e4efe8;
+  --panel: #ffffff;
+  --text: #1c2a22;
+  --muted: #5d6f64;
+  --line: #c9d6ce;
+  --ok: #1f7a4c;
+  --ok-bg: #d9f0e3;
+  --warn: #8a6a00;
+  --warn-bg: #f7efc8;
+  --error: #a32030;
+  --error-bg: #f8d9dd;
+  --brand: #0d5c3d;
+  --brand-soft: #147a52;
+  --focus: #0b6e4f;
+  --shadow: 0 1px 2px rgba(28, 42, 34, 0.06);
+  --font: "IBM Plex Sans JP", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  --mono: "IBM Plex Mono", "Consolas", monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  color: var(--text);
+  background:
+    radial-gradient(ellipse 80% 50% at 10% -10%, #d7ebe0 0%, transparent 55%),
+    radial-gradient(ellipse 60% 40% at 100% 0%, #e8f0ea 0%, transparent 50%),
+    var(--bg);
+  line-height: 1.55;
+  min-height: 100vh;
+}
+
+a { color: var(--brand); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  align-items: center;
+  padding: 0.85rem 1.4rem;
+  background: rgba(255, 255, 255, 0.86);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(8px);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.brand a {
+  font-weight: 700;
+  font-size: 1.2rem;
+  letter-spacing: 0.02em;
+  color: var(--brand);
+  text-decoration: none;
+}
+
+nav {
+  display: flex;
+  gap: 0.4rem;
+}
+
+nav a {
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  color: var(--muted);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+nav a.active,
+nav a:hover {
+  background: var(--bg-accent);
+  color: var(--brand);
+  text-decoration: none;
+}
+
+.top-actions {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.25rem 1.4rem 3rem;
+}
+
+.hero-status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  align-items: flex-end;
+}
+
+h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.65rem;
+  letter-spacing: -0.02em;
+  color: var(--brand);
+}
+
+h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+}
+
+h2 small {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.lede {
+  margin: 0;
+  color: var(--muted);
+  max-width: 36rem;
+}
+
+.overall {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: flex-end;
+}
+
+.meta { color: var(--muted); font-size: 0.9rem; }
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.stat {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  border-radius: 8px;
+  padding: 0.7rem 1rem;
+  min-width: 6.5rem;
+}
+
+.stat span { color: var(--muted); font-size: 0.85rem; }
+.stat b { display: block; font-size: 1.45rem; margin-top: 0.15rem; }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+  margin-bottom: 1rem;
+}
+
+.pill {
+  display: inline-block;
+  min-width: 4.2rem;
+  text-align: center;
+  border-radius: 4px;
+  padding: 0.12rem 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.pill.ok { background: var(--ok-bg); color: var(--ok); }
+.pill.warn { background: var(--warn-bg); color: var(--warn); }
+.pill.error { background: var(--error-bg); color: var(--error); }
+.pill.unknown { background: #e8ece9; color: var(--muted); }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th, td {
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+th {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+tr.error { background: #fff6f7; }
+tr.warn { background: #fffced; }
+
+.problem-list {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.problem-list li { margin: 0.35rem 0; }
+
+.empty { color: var(--muted); }
+
+button, .top-actions button {
+  appearance: none;
+  border: none;
+  background: var(--brand);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  padding: 0.45rem 0.9rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+button:hover { background: var(--brand-soft); }
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+button.linkish {
+  background: transparent;
+  color: var(--muted);
+  padding: 0 0.35rem;
+  font-size: 1rem;
+}
+
+.inline { display: inline; margin: 0; }
+
+.flash {
+  padding: 0.7rem 0.9rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.flash.error {
+  background: var(--error-bg);
+  color: var(--error);
+  border: 1px solid #e8b4ba;
+}
+
+.flash.ok {
+  background: var(--ok-bg);
+  color: var(--ok);
+  border: 1px solid #a9d9c0;
+}
+
+.config-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+.file-list ul {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+.file-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  padding: 0.35rem 0.45rem;
+  border-radius: 6px;
+}
+
+.file-list li.active {
+  background: var(--bg-accent);
+}
+
+.file-list a {
+  color: var(--text);
+  font-size: 0.92rem;
+  word-break: break-all;
+}
+
+.new-file label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+}
+
+.new-file input {
+  width: 100%;
+  margin-bottom: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+}
+
+textarea {
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 0.86rem;
+  line-height: 1.45;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  resize: vertical;
+  background: #fbfcfb;
+  color: var(--text);
+}
+
+.form-actions {
+  margin-top: 0.75rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.merged summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.merged pre {
+  margin: 0.75rem 0 0;
+  padding: 0.75rem;
+  background: #f7faf8;
+  border-radius: 8px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  max-height: 28rem;
+}
+
+@media (max-width: 800px) {
+  .config-layout {
+    grid-template-columns: 1fr;
+  }
+  .overall { align-items: flex-start; }
+  .top-actions { margin-left: 0; width: 100%; }
+}

@@ -12,5 +12,7 @@ settings:
   retain_days: 14
   # ダッシュボードの自動更新秒
   dashboard_refresh_seconds: 30
+  # 常駐モード（serve.py / docker compose）の監視間隔（秒）
+  check_interval: 300
   # 指定すると監視ログをファイルにも残す
   # log_file: "./output/beaconbase.log"

@@ -73,7 +73,12 @@ coverage.xml
 *.tmp
 *.temp
 .env.local
-.env.*.local 
+.env.*.local
 
-# 設定関連
-config.d/
+# 設定関連（リポジトリ直下の実運用断片のみ無視。docker/config.d は含める）
+/config.d/
+
+# docker compose の永続データと SSH 鍵マウント
+/data/
+/ssh/*
+!/ssh/.gitkeep

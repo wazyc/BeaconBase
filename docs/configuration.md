@@ -91,6 +91,7 @@ python monitor.py -c config.yaml --only ping,ports
 | `log_summary_max_lines` | 80 | `log_summary.log` に載せる本文の最大行数。0 で制限なし |
 | `retain_days` | 14 | 日次 JSON の保持日数。0 で無制限 |
 | `dashboard_refresh_seconds` | 30 | `index.html` を開いたときの自動更新秒 |
+| `check_interval` | 300 | 常駐モード（`serve.py` / docker compose）の監視間隔（秒）。最小 5 |
 | `log_file` | （なし） | 指定すると監視ログをファイルにも残す |
 
 ### port_checks.targets
