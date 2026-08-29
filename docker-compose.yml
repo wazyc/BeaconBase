@@ -1,0 +1,35 @@
+# BeaconBase — サーバー上で常駐監視 + WEB UI
+#
+# 起動:
+#   docker compose up -d --build
+# ブラウザ:
+#   http://localhost:8080/
+#
+# 設定と結果は ./data に永続化する。SSH 鍵は ./ssh をマウントする。
+
+services:
+  beaconbase:
+    build: .
+    container_name: beaconbase
+    restart: unless-stopped
+    ports:
+      - "${BEACONBASE_PORT:-8080}:8080"
+    environment:
+      BEACONBASE_DATA: /data
+      BEACONBASE_CONFIG: /data/config.yaml
+      BEACONBASE_HOST: 0.0.0.0
+      BEACONBASE_PORT: 8080
+      # 必要なら間隔を環境変数で上書き（秒）
+      # BEACONBASE_INTERVAL: "300"
+      # メール通知の SMTP パスワード
+      # BEACONBASE_SMTP_PASSWORD: ""
+    volumes:
+      - ./data:/data
+      # SSH 鍵（設定の ssh_key_path は /ssh/... を指す）
+      - ${BEACONBASE_SSH_DIR:-./ssh}:/ssh:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s

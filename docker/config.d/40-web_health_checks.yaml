@@ -1,0 +1,8 @@
+# 例: WEB ヘルス（必要に応じて編集する）
+web_health_checks:
+  targets:
+    - name: "example-com"
+      url: "https://example.com"
+      timeout: 10
+      verify_ssl: true
+      expected_status: 200

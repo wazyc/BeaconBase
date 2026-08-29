@@ -1,0 +1,5 @@
+# 通知（任意）。enabled: false でも alerts.log には残る。
+alerts:
+  enabled: true
+  fail_count: 2
+  remind_seconds: 3600

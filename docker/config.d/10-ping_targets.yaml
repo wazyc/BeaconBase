@@ -1,0 +1,5 @@
+# 例: 外部疎通確認（必要に応じて編集・削除する）
+ping_targets:
+  - name: "cloudflare-dns"
+    host: "1.1.1.1"
+    group: "external"

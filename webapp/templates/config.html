@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}設定 · BeaconBase{% endblock %}
+{% block content %}
+<section class="hero-status">
+  <div>
+    <h1>監視設定</h1>
+    <p class="lede">メイン YAML と includes_dir 直下の断片を編集する。保存後の次回監視から反映する。</p>
+  </div>
+</section>
+
+{% if error %}
+<p class="flash error">{{ error }}</p>
+{% endif %}
+{% if message %}
+<p class="flash ok">{{ message }}</p>
+{% endif %}
+
+{% if files %}
+<div class="config-layout">
+  <aside class="file-list panel">
+    <h2>ファイル</h2>
+    <ul>
+      {% for f in files %}
+      <li class="{% if f.id == selected_id %}active{% endif %}">
+        <a href="{{ url_for('config_page', file=f.id) }}">{{ f.label }}</a>
+        {% if f.kind == 'fragment' %}
+        <form method="post" action="{{ url_for('config_delete') }}" class="inline"
+              onsubmit="return confirm('削除しますか？');">
+          <input type="hidden" name="file_id" value="{{ f.id }}">
+          <button type="submit" class="linkish" title="削除">×</button>
+        </form>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    <form method="post" action="{{ url_for('config_create') }}" class="new-file">
+      <label for="filename">断片を追加</label>
+      <input id="filename" name="filename" placeholder="60-custom.yaml" required>
+      <button type="submit">作成</button>
+    </form>
+  </aside>
+
+  <section class="panel editor-panel">
+    <h2>編集: {{ selected_id }}</h2>
+    <form method="post" action="{{ url_for('config_save') }}">
+      <input type="hidden" name="file_id" value="{{ selected_id }}">
+      <textarea name="content" spellcheck="false" rows="28">{{ content }}</textarea>
+      <div class="form-actions">
+        <button type="submit">保存</button>
+      </div>
+    </form>
+  </section>
+</div>
+
+<details class="panel merged">
+  <summary>マージ済み設定プレビュー（読み取り専用）</summary>
+  <pre>{{ merged_preview }}</pre>
+</details>
+{% else %}
+<p class="empty">設定ファイルを読めませんでした。</p>
+{% endif %}
+{% endblock %}

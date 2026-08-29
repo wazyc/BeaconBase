@@ -1,0 +1,14 @@
+# コンテナ常駐時の実行パラメータ
+settings:
+  retry_count: 3
+  retry_delay: 5
+  timeout: 30
+  max_workers: 5
+  ping_timeout: 5
+  ssh_timeout: 15
+  log_summary_max_lines: 80
+  retain_days: 14
+  dashboard_refresh_seconds: 30
+  # 定期監視の間隔（秒）
+  check_interval: 300
+  log_file: /data/output/beaconbase.log

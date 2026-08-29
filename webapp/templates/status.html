@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}状況 · BeaconBase{% endblock %}
+{% block content %}
+<section class="hero-status">
+  <div>
+    <h1>監視状況</h1>
+    <p class="lede">直近の定期監視結果。設定変更は「設定」から行う。</p>
+  </div>
+  <div class="overall">
+    <span class="pill {{ overall_class }}">{{ overall }}</span>
+    {% if latest_timestamp %}
+    <span class="meta">最終更新 {{ latest_timestamp }}</span>
+    {% else %}
+    <span class="meta">まだ監視結果がありません</span>
+    {% endif %}
+  </div>
+</section>
+
+<div class="stats">
+  <div class="stat"><span>対象</span><b>{{ total }}</b></div>
+  <div class="stat"><span>障害</span><b>{{ problem_count }}</b></div>
+  <div class="stat"><span>警告</span><b>{{ warning_count }}</b></div>
+</div>
+
+{% if problems %}
+<section class="panel">
+  <h2>今見ている問題</h2>
+  <ul class="problem-list">
+    {% for category, result in problems %}
+    <li>
+      <span class="pill {{ status_class(result.status.name) }}">{{ result.status.name }}</span>
+      {{ category_labels.get(category, category) }} / {{ result.name }}
+      — {{ detail_text(result) }}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% for block in rows %}
+<section class="panel">
+  <h2>{{ block.label }} <small>{{ block.items|length }} 件</small></h2>
+  <table>
+    <thead>
+      <tr>
+        <th>状態</th>
+        <th>名前</th>
+        <th>グループ</th>
+        <th>詳細</th>
+        <th>継続</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in block.items %}
+      <tr class="{{ item.status_class }}">
+        <td><span class="pill {{ item.status_class }}">{{ item.status }}</span></td>
+        <td>{{ item.name }}</td>
+        <td>{{ item.group }}</td>
+        <td>{{ item.detail }}</td>
+        <td>{{ item.duration }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% else %}
+<p class="empty">実行済みの監視結果がありません。上部の「今すぐ監視」か、間隔待ちで結果が出る。</p>
+{% endfor %}
+
+{% if scheduler_status and scheduler_status.last_error %}
+<p class="flash error">直近のスケジューラエラー: {{ scheduler_status.last_error }}</p>
+{% endif %}
+{% endblock %}

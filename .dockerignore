@@ -1,0 +1,15 @@
+# Git / Docker 用
+.git
+.cursor
+__pycache__
+*.pyc
+.pytest_cache
+.coverage
+htmlcov
+venv
+.env
+data
+ssh
+output
+*.md
+!README.md

@@ -26,6 +26,8 @@ settings:
   log_summary_max_lines: 80
   retain_days: 14
   dashboard_refresh_seconds: 30
+  # 常駐モードの監視間隔（秒）
+  check_interval: 300
   # log_file: "./output/beaconbase.log"
 
 # ============================================================

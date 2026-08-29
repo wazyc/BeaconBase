@@ -1,0 +1,4 @@
+# SSH 既定値（鍵は compose の /ssh マウントを想定）
+default_ssh:
+  username: monitor
+  key_path: /ssh/id_rsa

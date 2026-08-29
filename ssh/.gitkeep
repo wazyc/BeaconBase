@@ -1,0 +1,2 @@
+# SSH 鍵を置くディレクトリ（docker compose で /ssh にマウントする）
+# 例: id_rsa をここに置き、設定の key_path を /ssh/id_rsa にする
